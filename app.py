@@ -5,16 +5,16 @@ import plotly.graph_objects as go
 import json
 import os
 
-# --- SICHERHEITSEINSTELLUNG ---
-MEIN_PASSWORT = "trader2026"
+# --- SICHERHEIT ---
+MEIN_PASSWORT = "trader2025"
 
 
 def check_password():
     if "password_correct" not in st.session_state:
         st.title("🔒 Sicherer Zugriff")
         user_input = st.text_input("Bitte Passwort eingeben:", type="password")
-        # NEU: width='stretch' statt use_container_width
-        if st.button("Anmelden", width='stretch'):
+        # ZURÜCK AUF: use_container_width=True
+        if st.button("Anmelden", use_container_width=True):
             if user_input == MEIN_PASSWORT:
                 st.session_state.password_correct = True
                 st.rerun()
@@ -28,7 +28,7 @@ if not check_password():
     st.stop()
 
 
-# --- DATEN-FUNKTIONEN ---
+# --- DATEN ---
 @st.cache_data(ttl=300)
 def get_stock_data(tickers):
     if not tickers: return pd.DataFrame()
@@ -70,7 +70,7 @@ def calc_rsi(series, period=14):
 
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI Tracker 2026", layout="wide")
+st.set_page_config(page_title="Mein RSI Tracker", layout="wide")
 
 st.markdown("""
     <style>
@@ -101,8 +101,7 @@ if search_query:
     if results:
         options = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in results if r.get('shortname')}
         selection = st.selectbox("Ergebnis wählen:", options.keys())
-        # NEU: width='stretch'
-        if st.button("Hinzufügen", width='stretch'):
+        if st.button("Hinzufügen", use_container_width=True):
             sym = options[selection]
             if sym not in st.session_state.watchlist:
                 st.session_state.watchlist.append(sym)
@@ -136,7 +135,7 @@ if st.session_state.watchlist:
                     <div style="display:flex; justify-content:space-between;">
                         <b>{ticker}</b> <span class="{label_class}">{rating}</span>
                     </div>
-                    <div>Kurs: {curr_price:.2f} | RSI (14): <b class="{label_class}">{curr_rsi:.2f}</b></div>
+                    <div>Kurs: {float(curr_price):.2f} | RSI (14): <b class="{label_class}">{float(curr_rsi):.2f}</b></div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -146,11 +145,9 @@ if st.session_state.watchlist:
                 fig.update_layout(height=160, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)',
                                   plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"), yaxis=dict(range=[0, 100]))
 
-                # NEU: width='stretch' auch für Charts
-                st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                # NEU: width='stretch'
-                if st.button(f"🗑️ {ticker} löschen", key=f"del_{ticker}", width='stretch'):
+                if st.button(f"🗑️ {ticker} löschen", key=f"del_{ticker}", use_container_width=True):
                     st.session_state.watchlist.remove(ticker)
                     save_watchlist(st.session_state.watchlist)
                     st.cache_data.clear()
@@ -158,6 +155,6 @@ if st.session_state.watchlist:
         except:
             continue
 
-if st.sidebar.button("Abmelden", width='stretch'):
+if st.sidebar.button("Abmelden", use_container_width=True):
     st.session_state.clear()
     st.rerun()
