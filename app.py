@@ -6,16 +6,15 @@ import json
 import os
 
 
-# --- KOMPATIBILITÄTS-FUNKTION ---
+# --- KOMPATIBILITÄTS-FUNKTION (Gegen Rerun-Fehler) ---
 def trigger_rerun():
-    """Startet die App neu - kompatibel mit alten und neuen Streamlit Versionen"""
     if hasattr(st, "rerun"):
         st.rerun()
     else:
         st.experimental_rerun()
 
 
-# --- SICHERHEIT ---
+# --- SICHERHEIT (Gegen Fremdzugriff) ---
 MEIN_PASSWORT = "trader2025"
 
 
@@ -23,7 +22,6 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.title("🔒 Sicherer Zugriff")
         user_input = st.text_input("Bitte Passwort eingeben:", type="password")
-        # Klassischer Befehl: use_container_width
         if st.button("Anmelden", use_container_width=True):
             if user_input == MEIN_PASSWORT:
                 st.session_state.password_correct = True
@@ -38,7 +36,7 @@ if not check_password():
     st.stop()
 
 
-# --- DATEN-FUNKTIONEN ---
+# --- DATEN-LOGIK ---
 @st.cache_data(ttl=300)
 def get_stock_data(tickers):
     if not tickers: return pd.DataFrame()
@@ -49,7 +47,7 @@ def get_stock_data(tickers):
 def search_ticker(query):
     try:
         search = yf.Search(query, max_results=5)
-        return search.quotes
+        return search.quotes  # Nutzt .quotes für Kompatibilität
     except:
         return []
 
@@ -104,15 +102,15 @@ if 'watchlist' not in st.session_state:
 
 st.title("📈 Mein RSI Tracker")
 
-# --- SUCHE ---
-search_query = st.text_input("Aktie suchen:", placeholder="z.B. Apple, Tesla, Volkswagen...")
+# --- SUCHE (Vorschläge beim Tippen) ---
+search_query = st.text_input("Aktie suchen:", placeholder="Name, WKN oder Symbol...")
 if search_query:
     results = search_ticker(search_query)
     if results:
         options = {f"{r.get('shortname', 'Info')} ({r.get('symbol')})": r.get('symbol') for r in results if
                    r.get('shortname')}
-        selection = st.selectbox("Ergebnis auswählen:", options.keys())
-        if st.button("➕ Aktie hinzufügen", use_container_width=True):
+        selection = st.selectbox("Ergebnis wählen:", options.keys())
+        if st.button("➕ Hinzufügen", use_container_width=True):
             sym = options[selection]
             if sym not in st.session_state.watchlist:
                 st.session_state.watchlist.append(sym)
@@ -122,13 +120,13 @@ if search_query:
 
 st.divider()
 
-# --- ANZEIGE DER AKTIEN ---
+# --- ANZEIGE DER CARDS ---
 if st.session_state.watchlist:
     all_data = get_stock_data(st.session_state.watchlist)
 
     for ticker in st.session_state.watchlist:
         try:
-            # Daten für Ticker holen
+            # Ticker-Daten extrahieren
             if len(st.session_state.watchlist) > 1:
                 df = all_data.xs(ticker, axis=1, level=1)
             else:
@@ -151,7 +149,7 @@ if st.session_state.watchlist:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Chart
+                # Plotly Chart
                 fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='#4e8cff', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="red")
                 fig.add_hline(y=30, line_dash="dash", line_color="green")

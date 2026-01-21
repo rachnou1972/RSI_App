@@ -1,4 +1,5 @@
+streamlit
 yfinance
 pandas
 plotly
-streamlit
+altair<5
