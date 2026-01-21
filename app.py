@@ -5,6 +5,16 @@ import plotly.graph_objects as go
 import json
 import os
 
+
+# --- SICHERHEITS-REBOOT FUNKTION ---
+def safe_rerun():
+    """Hilfsfunktion für den Neustart, kompatibel mit allen Streamlit-Versionen"""
+    if hasattr(st, "rerun"):
+        st.rerun()
+    else:
+        st.experimental_rerun()
+
+
 # --- SICHERHEIT ---
 MEIN_PASSWORT = "trader2025"
 
@@ -13,11 +23,10 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.title("🔒 Sicherer Zugriff")
         user_input = st.text_input("Bitte Passwort eingeben:", type="password")
-        # ZURÜCK AUF: use_container_width=True
         if st.button("Anmelden", use_container_width=True):
             if user_input == MEIN_PASSWORT:
                 st.session_state.password_correct = True
-                st.rerun()
+                safe_rerun()
             else:
                 st.error("Falsches Passwort!")
         return False
@@ -28,7 +37,7 @@ if not check_password():
     st.stop()
 
 
-# --- DATEN ---
+# --- DATEN-LOGIK ---
 @st.cache_data(ttl=300)
 def get_stock_data(tickers):
     if not tickers: return pd.DataFrame()
@@ -70,7 +79,7 @@ def calc_rsi(series, period=14):
 
 
 # --- UI SETUP ---
-st.set_page_config(page_title="Mein RSI Tracker", layout="wide")
+st.set_page_config(page_title="RSI Tracker", layout="wide")
 
 st.markdown("""
     <style>
@@ -95,19 +104,19 @@ if 'watchlist' not in st.session_state:
 st.title("📈 Mein RSI Tracker")
 
 # SUCHE
-search_query = st.text_input("Aktie suchen:", placeholder="Name oder Symbol...")
+search_query = st.text_input("Aktie suchen:", placeholder="z.B. Apple, Tesla...")
 if search_query:
     results = search_ticker(search_query)
     if results:
         options = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in results if r.get('shortname')}
         selection = st.selectbox("Ergebnis wählen:", options.keys())
-        if st.button("Hinzufügen", use_container_width=True):
+        if st.button("➕ Hinzufügen", use_container_width=True):
             sym = options[selection]
             if sym not in st.session_state.watchlist:
                 st.session_state.watchlist.append(sym)
                 save_watchlist(st.session_state.watchlist)
                 st.cache_data.clear()
-                st.rerun()
+                safe_rerun()
 
 st.divider()
 
@@ -117,6 +126,7 @@ if st.session_state.watchlist:
 
     for ticker in st.session_state.watchlist:
         try:
+            # Daten-Extraktion verbessern
             if len(st.session_state.watchlist) > 1:
                 df = all_data.xs(ticker, axis=1, level=1)
             else:
@@ -135,7 +145,7 @@ if st.session_state.watchlist:
                     <div style="display:flex; justify-content:space-between;">
                         <b>{ticker}</b> <span class="{label_class}">{rating}</span>
                     </div>
-                    <div>Kurs: {float(curr_price):.2f} | RSI (14): <b class="{label_class}">{float(curr_rsi):.2f}</b></div>
+                    <div>Preis: {float(curr_price):.2f} | RSI: <b class="{label_class}">{float(curr_rsi):.2f}</b></div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -151,10 +161,10 @@ if st.session_state.watchlist:
                     st.session_state.watchlist.remove(ticker)
                     save_watchlist(st.session_state.watchlist)
                     st.cache_data.clear()
-                    st.rerun()
-        except:
+                    safe_rerun()
+        except Exception as e:
             continue
 
 if st.sidebar.button("Abmelden", use_container_width=True):
     st.session_state.clear()
-    st.rerun()
+    safe_rerun()
