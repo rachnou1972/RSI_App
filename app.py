@@ -16,20 +16,15 @@ def trigger_rerun():
 
 # --- SICHERHEIT (Über Streamlit Secrets) ---
 def check_password():
-    """Gibt True zurück, wenn das Passwort korrekt ist."""
     if "password_correct" not in st.session_state:
         st.title("🔒 Sicherer Zugriff")
-        st.write("Bitte gib dein Passwort ein, um den RSI Tracker zu nutzen.")
-
-        # Das Passwort wird sicher aus den Streamlit Secrets geladen
-        # Du musst es in der Streamlit Cloud unter Settings -> Secrets hinterlegen!
         try:
             richtiges_passwort = st.secrets["MY_PASSWORD"]
         except:
-            st.error("Fehler: Kein Passwort in den Streamlit-Secrets gefunden!")
+            st.error("Fehler: Passwort in Secrets fehlt (MY_PASSWORD)")
             st.stop()
 
-        user_input = st.text_input("Passwort", type="password")
+        user_input = st.text_input("Passwort eingeben", type="password")
         if st.button("Anmelden", use_container_width=True):
             if user_input == richtiges_passwort:
                 st.session_state.password_correct = True
@@ -40,12 +35,11 @@ def check_password():
     return True
 
 
-# Passwort-Abfrage starten
 if not check_password():
     st.stop()
 
 
-# --- DATEN-FUNKTIONEN (Optimiert mit Caching) ---
+# --- DATEN-FUNKTIONEN ---
 @st.cache_data(ttl=300)
 def get_stock_data(tickers):
     if not tickers: return pd.DataFrame()
@@ -70,8 +64,8 @@ def load_watchlist():
             with open(DB_FILE, "r") as f:
                 return json.load(f)
         except:
-            return ["AAPL", "TSLA"]
-    return ["AAPL", "TSLA"]
+            return ["AAPL"]
+    return ["AAPL"]
 
 
 def save_watchlist(watchlist):
@@ -89,31 +83,43 @@ def calc_rsi(series, period=14):
 # --- DESIGN & LAYOUT ---
 st.set_page_config(page_title="RSI Tracker", layout="wide")
 
+# CSS FÜR ZENTRIERUNG UND MOBILE OPTIMIERUNG
 st.markdown("""
     <style>
+    /* Hintergrundfarbe der gesamten App */
     .stApp { background-color: #1a1c3d; color: white; }
 
-    /* Button Design: Blau mit weißem Text */
+    /* Zentrierung auf Laptops (max-width) */
+    @media (min-width: 768px) {
+        .main .block-container {
+            max-width: 850px;
+            padding-top: 3rem;
+            padding-bottom: 3rem;
+            margin: auto;
+        }
+    }
+
+    /* Buttons: Blau, abgerundet, weißer Text */
     div.stButton > button {
         background-color: #4e8cff !important;
         color: white !important;
         border-radius: 12px !important;
         font-weight: bold !important;
-        height: 50px !important;
+        height: 48px !important;
         border: none !important;
     }
 
-    /* Eingabefelder: Schwarzer Text beim Tippen */
+    /* Eingabefelder: Schwarz beim Tippen */
     input { color: #000 !important; font-weight: bold !important; }
 
-    /* Karten-Design für die Aktien */
+    /* Karten Design */
     .card {
         background: linear-gradient(135deg, #2b306b 0%, #1e224f 100%);
         padding: 20px;
-        border-radius: 15px;
+        border-radius: 18px;
         border-left: 8px solid #4e8cff;
         margin-bottom: 5px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.4);
     }
 
     .buy { color: #00ff88; font-weight: bold; }
@@ -125,19 +131,20 @@ st.markdown("""
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_watchlist()
 
-st.title("📈 Mein RSI Tracker")
+st.title("📈 RSI Tracker")
 
 # --- SUCHE ---
-st.subheader("Aktie suchen (Name, WKN oder Symbol)")
-search_input = st.text_input("Suche...", placeholder="z.B. Apple, Volkswagen...", label_visibility="collapsed")
+st.subheader("Aktie suchen")
+search_input = st.text_input("Name, WKN oder Symbol...", placeholder="z.B. Apple, Tesla...",
+                             label_visibility="collapsed")
 
 if len(search_input) > 1:
     results = search_ticker(search_input)
     if results:
         options = {f"{r.get('shortname', 'Info')} ({r.get('symbol')})": r.get('symbol') for r in results if
                    r.get('shortname')}
-        selection = st.selectbox("Ergebnis auswählen:", options.keys())
-        if st.button("➕ Zur Liste hinzufügen", use_container_width=True):
+        selection = st.selectbox("Ergebnis wählen:", options.keys())
+        if st.button("➕ Hinzufügen", use_container_width=True):
             sym = options[selection]
             if sym not in st.session_state.watchlist:
                 st.session_state.watchlist.append(sym)
@@ -153,7 +160,7 @@ if st.session_state.watchlist:
 
     for ticker in st.session_state.watchlist:
         try:
-            # Daten-Extraktion
+            # Ticker-Daten
             if len(st.session_state.watchlist) > 1:
                 df = all_data.xs(ticker, axis=1, level=1)
             else:
@@ -164,37 +171,41 @@ if st.session_state.watchlist:
                 curr_rsi = float(rsi_series.iloc[-1])
                 curr_price = float(df['Close'].iloc[-1])
 
-                # Bewertung (RSI 14 Tage Interval)
                 l_class = "buy" if curr_rsi < 30 else "sell" if curr_rsi > 70 else "neutral"
-                rating = "KAUFEN (Überverkauft)" if curr_rsi < 30 else "VERKAUFEN (Überkauft)" if curr_rsi > 70 else "Neutral"
+                rating = "ÜBERVERKAUFT (Kaufen)" if curr_rsi < 30 else "ÜBERKAUFT (Verkaufen)" if curr_rsi > 70 else "Neutral"
 
                 st.markdown(f"""
                 <div class="card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-size:1.4em; font-weight:bold;">{ticker}</span>
-                        <span class="{l_class}" style="font-size:1.1em;">{rating}</span>
+                        <span class="{l_class}" style="font-size:1em;">{rating}</span>
                     </div>
-                    <div style="margin-top:10px;">
-                        Preis: <b>{curr_price:.2f}</b> | RSI (14): <b class="{l_class}">{curr_rsi:.2f}</b>
+                    <div style="margin-top:8px; font-size:1.1em;">
+                        Kurs: <b>{curr_price:.2f}</b> | RSI (14): <b class="{l_class}">{curr_rsi:.2f}</b>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
                 # Plotly Chart
-                fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='#4e8cff', width=3)))
+                fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, name="RSI", line=dict(color='#4e8cff', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
-                fig.update_layout(height=160, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)',
-                                  plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"),
-                                  xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
+                fig.update_layout(
+                    height=180, margin=dict(l=0, r=0, t=10, b=10),
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color="white"),
+                    xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False)
+                )
 
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
+                # Löschen Button (jetzt mit Icon)
                 if st.button(f"🗑️ {ticker} entfernen", key="del_" + ticker, use_container_width=True):
                     st.session_state.watchlist.remove(ticker)
                     save_watchlist(st.session_state.watchlist)
                     st.cache_data.clear()
                     trigger_rerun()
+                st.write("")  # Kleiner Abstand
         except:
             continue
 
