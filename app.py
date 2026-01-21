@@ -6,9 +6,9 @@ import json
 import os
 
 
-# --- SICHERHEITS-REBOOT FUNKTION ---
-def safe_rerun():
-    """Hilfsfunktion für den Neustart, kompatibel mit allen Streamlit-Versionen"""
+# --- KOMPATIBILITÄTS-FUNKTION ---
+def trigger_rerun():
+    """Startet die App neu - kompatibel mit alten und neuen Streamlit Versionen"""
     if hasattr(st, "rerun"):
         st.rerun()
     else:
@@ -23,10 +23,11 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.title("🔒 Sicherer Zugriff")
         user_input = st.text_input("Bitte Passwort eingeben:", type="password")
+        # Klassischer Befehl: use_container_width
         if st.button("Anmelden", use_container_width=True):
             if user_input == MEIN_PASSWORT:
                 st.session_state.password_correct = True
-                safe_rerun()
+                trigger_rerun()
             else:
                 st.error("Falsches Passwort!")
         return False
@@ -37,7 +38,7 @@ if not check_password():
     st.stop()
 
 
-# --- DATEN-LOGIK ---
+# --- DATEN-FUNKTIONEN ---
 @st.cache_data(ttl=300)
 def get_stock_data(tickers):
     if not tickers: return pd.DataFrame()
@@ -78,7 +79,7 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 
-# --- UI SETUP ---
+# --- DESIGN SETUP ---
 st.set_page_config(page_title="RSI Tracker", layout="wide")
 
 st.markdown("""
@@ -103,30 +104,31 @@ if 'watchlist' not in st.session_state:
 
 st.title("📈 Mein RSI Tracker")
 
-# SUCHE
-search_query = st.text_input("Aktie suchen:", placeholder="z.B. Apple, Tesla...")
+# --- SUCHE ---
+search_query = st.text_input("Aktie suchen:", placeholder="z.B. Apple, Tesla, Volkswagen...")
 if search_query:
     results = search_ticker(search_query)
     if results:
-        options = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in results if r.get('shortname')}
-        selection = st.selectbox("Ergebnis wählen:", options.keys())
-        if st.button("➕ Hinzufügen", use_container_width=True):
+        options = {f"{r.get('shortname', 'Info')} ({r.get('symbol')})": r.get('symbol') for r in results if
+                   r.get('shortname')}
+        selection = st.selectbox("Ergebnis auswählen:", options.keys())
+        if st.button("➕ Aktie hinzufügen", use_container_width=True):
             sym = options[selection]
             if sym not in st.session_state.watchlist:
                 st.session_state.watchlist.append(sym)
                 save_watchlist(st.session_state.watchlist)
                 st.cache_data.clear()
-                safe_rerun()
+                trigger_rerun()
 
 st.divider()
 
-# ANZEIGE
+# --- ANZEIGE DER AKTIEN ---
 if st.session_state.watchlist:
     all_data = get_stock_data(st.session_state.watchlist)
 
     for ticker in st.session_state.watchlist:
         try:
-            # Daten-Extraktion verbessern
+            # Daten für Ticker holen
             if len(st.session_state.watchlist) > 1:
                 df = all_data.xs(ticker, axis=1, level=1)
             else:
@@ -134,21 +136,22 @@ if st.session_state.watchlist:
 
             if not df.empty:
                 rsi_series = calc_rsi(df['Close'])
-                curr_rsi = rsi_series.iloc[-1]
-                curr_price = df['Close'].iloc[-1]
+                curr_rsi = float(rsi_series.iloc[-1])
+                curr_price = float(df['Close'].iloc[-1])
 
-                label_class = "buy" if curr_rsi < 30 else "sell" if curr_rsi > 70 else ""
+                l_class = "buy" if curr_rsi < 30 else "sell" if curr_rsi > 70 else ""
                 rating = "ÜBERVERKAUFT" if curr_rsi < 30 else "ÜBERKAUFT" if curr_rsi > 70 else "Neutral"
 
                 st.markdown(f"""
                 <div class="card">
                     <div style="display:flex; justify-content:space-between;">
-                        <b>{ticker}</b> <span class="{label_class}">{rating}</span>
+                        <b>{ticker}</b> <span class="{l_class}">{rating}</span>
                     </div>
-                    <div>Preis: {float(curr_price):.2f} | RSI: <b class="{label_class}">{float(curr_rsi):.2f}</b></div>
+                    <div>Preis: {curr_price:.2f} | RSI (14): <b class="{l_class}">{curr_rsi:.2f}</b></div>
                 </div>
                 """, unsafe_allow_html=True)
 
+                # Chart
                 fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='#4e8cff', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="red")
                 fig.add_hline(y=30, line_dash="dash", line_color="green")
@@ -157,14 +160,14 @@ if st.session_state.watchlist:
 
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                if st.button(f"🗑️ {ticker} löschen", key=f"del_{ticker}", use_container_width=True):
+                if st.button(f"🗑️ {ticker} löschen", key="del_" + ticker, use_container_width=True):
                     st.session_state.watchlist.remove(ticker)
                     save_watchlist(st.session_state.watchlist)
                     st.cache_data.clear()
-                    safe_rerun()
-        except Exception as e:
+                    trigger_rerun()
+        except:
             continue
 
 if st.sidebar.button("Abmelden", use_container_width=True):
     st.session_state.clear()
-    safe_rerun()
+    trigger_rerun()
