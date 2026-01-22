@@ -6,9 +6,9 @@ import sqlite3
 import os
 
 # --- KONFIGURATION ---
-DB_NAME = "watchlist_ultimate_v6.db"
-# Sehr kräftige Farben, damit man den Unterschied sofort sieht
-COLORS = ["#2b306b", "#004d40", "#4a148c", "#827717", "#01579b", "#3e2723"]
+DB_NAME = "watchlist_final_v7.db"
+# Kräftige Farben für die Modul-Hintergründe (Blau, Grün, Lila, etc.)
+COLORS = ["#2b306b", "#1b4d3e", "#4a1b41", "#3d1b4a", "#1b3d4a"]
 
 
 # --- BASIS FUNKTIONEN ---
@@ -112,44 +112,42 @@ init_db()
 if not check_password():
     st.stop()
 
-# GLOBALER CSS FIX
+# GLOBALER CSS FIX (FÜR DAS MODUL-DESIGN)
 st.markdown("""
     <style>
-    /* Hintergrund der Seite */
-    .stApp { background-color: #0e1117 !important; color: white !important; }
+    .stApp { background-color: #0e1117; color: white; }
 
     /* Laptop Zentrierung */
     @media (min-width: 768px) {
-        .main .block-container { max-width: 900px; margin: auto; }
+        .main .block-container { max-width: 850px; margin: auto; }
     }
 
-    /* Aggressives Styling für das umschließende Modul */
+    /* WICHTIG: Das umschließende Element (Modul) */
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        border: none !important;
-        margin-bottom: 30px !important;
         border-radius: 20px !important;
-        overflow: hidden !important;
-        padding: 0px !important;
+        margin-bottom: 40px !important;
+        padding: 20px !important; /* Hierdurch wird die Hintergrundfarbe an den Seiten sichtbar */
+        border: none !important;
     }
 
-    /* Header Bereich */
+    /* Stufe 1: Header innerhalb des Moduls */
     .module-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 20px;
-        width: 100%;
+        margin-bottom: 20px;
+        color: white;
     }
     .header-left { display: flex; align-items: baseline; gap: 15px; }
-    .stock-name { font-size: 2.2em; font-weight: bold; }
-    .stock-isin { font-size: 1em; color: rgba(255,255,255,0.6); }
-    .stock-price { font-size: 1.6em; margin-left: 10px; }
+    .stock-title { font-size: 2em; font-weight: bold; }
+    .stock-isin { font-size: 0.9em; color: rgba(255,255,255,0.7); }
+    .stock-price { font-size: 1.5em; margin-left: 10px; font-weight: bold; }
 
-    /* RSI Bubble */
+    /* RSI Bubble rechts */
     .rsi-bubble {
-        padding: 12px 20px;
+        padding: 10px 20px;
         border-radius: 15px;
-        font-size: 1.3em;
+        font-size: 1.2em;
         font-weight: bold;
         border: 2px solid white;
     }
@@ -157,20 +155,17 @@ st.markdown("""
     .sell { background: rgba(255,78,78,0.2); color: #ff4e4e; border-color: #ff4e4e; }
     .neutral { background: rgba(255,204,0,0.2); color: #ffcc00; border-color: #ffcc00; }
 
-    /* Button Styling am Ende des Blocks */
+    /* Button Styling am Ende */
     div.stButton > button {
-        border-radius: 0px !important;
-        border: none !important;
-        height: 55px !important;
         background-color: #ff4e4e !important;
         color: white !important;
-        font-weight: bold !important;
-        width: 100% !important;
-        margin-top: -10px !important;
+        border-radius: 10px !important;
+        height: 45px !important;
+        border: none !important;
+        margin-top: 20px !important;
     }
 
-    /* Eingabefeld Sichtbarkeit */
-    input { color: #000 !important; font-weight: bold !important; background-color: white !important; }
+    input { color: #000 !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -208,26 +203,24 @@ if st.session_state.watchlist:
     all_data = fetch_data(st.session_state.watchlist)
 
     for i, ticker in enumerate(st.session_state.watchlist):
-        bg = COLORS[i % len(COLORS)]
-        # Wir säubern den Ticker Namen für die ID (Punkte entfernen)
+        bg_modul = COLORS[i % len(COLORS)]
         clean_id = ticker.replace(".", "_").replace("-", "_")
 
-        # DER CONTAINER STARTET (Hier wird alles umschlossen)
+        # DER UMSCHLIESSENDE CONTAINER
         with st.container(border=True):
-            # Marker zur Identifizierung
-            st.markdown(f'<div id="module-{clean_id}"></div>', unsafe_allow_html=True)
+            # Wir setzen einen Marker, um genau diesen Container per CSS zu färben
+            st.markdown(f'<div id="marker-{clean_id}"></div>', unsafe_allow_html=True)
 
-            # SPEZIFISCHES CSS FÜR DIESEN BLOCK
+            # SPEZIFISCHES CSS: Färbt den Rahmen-Container dieses Tickers
             st.markdown(f"""
                 <style>
-                div[data-testid="stVerticalBlockBorderWrapper"]:has(#module-{clean_id}) {{
-                    background-color: {bg} !important;
+                div[data-testid="stVerticalBlockBorderWrapper"]:has(#marker-{clean_id}) {{
+                    background-color: {bg_modul} !important;
                 }}
                 </style>
                 """, unsafe_allow_html=True)
 
             try:
-                # Daten
                 df = all_data.xs(ticker, axis=1, level=1) if len(st.session_state.watchlist) > 1 else all_data
                 if not df.empty:
                     isin = get_isin(ticker)
@@ -236,29 +229,30 @@ if st.session_state.watchlist:
                     cl = "buy" if rsi_v < 30 else "sell" if rsi_v > 70 else "neutral"
                     stat = "Kaufzone" if cl == "buy" else ("Verkaufzone" if cl == "sell" else "Neutral")
 
-                    # STUFE 1: HEADER
+                    # STUFE 1: HEADER (Name, ISIN, Preis, Bubble)
                     st.markdown(f"""
                         <div class="module-header">
                             <div class="header-left">
-                                <span class="stock-name">{ticker} : <span class="stock-isin">{isin}</span></span>
-                                <span class="stock-price">Preis: {price:.2f}</span>
+                                <span class="stock-title">{ticker} : <span class="stock-isin">{isin}</span></span>
+                                <span class="stock-price">{price:.2f}</span>
                             </div>
                             <div class="rsi-bubble {cl}">RSI (14): {rsi_v:.2f} - {stat}</div>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    # STUFE 2: CHART (Transparent)
+                    # STUFE 2: CHART (Mittelteil)
+                    # Der Chart hat seinen eigenen dunklen Hintergrund, die Modul-Farbe bildet den Rahmen
                     fig = go.Figure(go.Scatter(x=df.index, y=calc_rsi(df['Close']), line=dict(color='white', width=3)))
                     fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                     fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
                     fig.update_layout(
-                        height=180, margin=dict(l=10, r=10, t=0, b=0),
-                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                        height=180, margin=dict(l=5, r=5, t=5, b=5),
+                        paper_bgcolor='#1a1a1a', plot_bgcolor='#1a1a1a',  # Dunkler Chart-Hintergrund
                         font=dict(color="white"), xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False)
                     )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # STUFE 3: BUTTON
+                    # STUFE 3: BUTTON (Unterteil)
                     if st.button(f"🗑️ {ticker} entfernen", key="del_" + ticker, use_container_width=True):
                         st.session_state.watchlist.remove(ticker)
                         remove_from_db(ticker)
