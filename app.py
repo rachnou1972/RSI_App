@@ -6,9 +6,9 @@ import sqlite3
 import os
 
 # --- DATENBANK & SETUP ---
-DB_NAME = "watchlist_final_v200.db"
-# Die kräftigen Farben für das äußere Modul (Blau, Grün, Lila, Petrol, Anthrazit)
-OUTER_COLORS = ["#1e3a8a", "#064e3b", "#581c87", "#0f766e", "#334155"]
+DB_NAME = "watchlist_vFinal_100.db"
+# Kräftige Modul-Farben (Blau, Grün, Lila, Petrol, Anthrazit)
+COLORS = ["#1e3a8a", "#064e3b", "#581c87", "#0f766e", "#334155"]
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -50,93 +50,93 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + (gain / loss)))
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI Pro Tracker", layout="wide")
+st.set_page_config(page_title="RSI Ultimate Tracker", layout="wide")
 init_db()
 
-# --- CSS: DAS IST DER ULTIMATIVE VARIABLEN-FIX ---
+# --- CSS: DAS ERZWINGT DIE FARBEN UND ENTFERNT DIE SCHWARZEN LÜCKEN ---
 st.markdown("""
     <style>
-    /* Basis App */
+    /* Hintergrund der gesamten Seite */
     .stApp { background-color: #0e1117 !important; }
     
     @media (min-width: 768px) {
         .main .block-container { max-width: 950px; margin: auto; }
     }
 
-    /* 1. ÄUSSERES MODUL */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.outer-marker) {
-        border-radius: 40px !important;
-        border: none !important;
-        padding: 30px !important;
-        margin-bottom: 40px !important;
-        /* Wir überschreiben die Streamlit-Variablen direkt im Element */
-        --st-border-color: transparent;
+    /* WICHTIG: Entfernt die vertikalen Lücken zwischen den Elementen im Modul */
+    div[data-testid="stVerticalBlock"]:has(> div > div > .stock-id-marker) {
+        gap: 0px !important;
     }
 
-    /* HEADER LAYOUT */
-    .custom-header {
+    /* Das umschließende UI-Element (Der äußere Rahmen) */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.stock-id-marker) {
+        border-radius: 35px !important;
+        border: none !important;
+        padding: 0px !important;
+        margin-bottom: 40px !important;
+        overflow: hidden !important;
+    }
+
+    /* --- STUFE 1: HEADER --- */
+    .header-layout {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 25px;
+        padding: 25px 25px 15px 25px;
         width: 100%;
     }
-    .box-info-left {
-        background-color: #d1e8ff !important; 
-        padding: 12px 20px;
-        border-radius: 10px;
+    .box-info {
+        background-color: #d1e8ff; 
+        padding: 10px 18px;
+        border-radius: 8px;
         color: #ff0000 !important;
         font-weight: bold;
-        font-size: 1.2em;
-        box-shadow: 3px 3px 10px rgba(0,0,0,0.2);
+        font-size: 1.1em;
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
     }
-    .box-rsi-right {
-        background-color: #ffb400 !important; 
-        padding: 12px 20px;
-        border-radius: 10px;
+    .box-rsi {
+        background-color: #ffb400; 
+        padding: 10px 18px;
+        border-radius: 8px;
         color: black !important;
         font-weight: bold;
-        font-size: 1.4em;
+        font-size: 1.3em;
         border: 2px solid black;
-        box-shadow: 3px 3px 10px rgba(0,0,0,0.2);
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
     }
 
-    /* 2. CHART BOX (PFIRSICH) - Wir überschreiben die Hintergrund-Variable */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.chart-marker) {
+    /* --- STUFE 2: CHART BOX (Pfirsich) --- */
+    /* Wir zielen auf den Container ab, der den Chart umschließt */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.chart-area-marker) {
         background-color: #f7cbb4 !important;
-        --background-color: #f7cbb4;
-        --secondary-background-color: #f7cbb4;
+        margin: 0 20px 20px 20px !important;
         border-radius: 20px !important;
-        padding: 15px !important;
+        padding: 10px !important;
         border: 1px solid rgba(0,0,0,0.1) !important;
-        margin-bottom: 20px !important;
     }
 
-    /* 3. BUTTON BOX (HELLGRÜN) */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.button-marker) {
+    /* --- STUFE 3: BUTTON (Hellgrün) --- */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.button-area-marker) {
         background-color: #c4f3ce !important;
-        --background-color: #c4f3ce;
-        --secondary-background-color: #c4f3ce;
+        margin: 0 20px 25px 20px !important;
         border-radius: 15px !important;
         padding: 0px !important;
         border: 1px solid rgba(0,0,0,0.1) !important;
     }
-
-    /* BUTTON TEXT & STYLE */
     div.stButton > button {
         background-color: transparent !important;
         color: #1a3d34 !important;
         border: none !important;
-        height: 65px !important;
-        font-size: 1.6em !important;
-        font-weight: bold !important;
+        height: 60px !important;
         width: 100% !important;
+        font-size: 1.5em !important;
+        font-weight: bold !important;
     }
 
-    /* MOBILE OPTIMIERUNG */
+    /* Mobile Anpassung */
     @media (max-width: 600px) {
-        .custom-header { flex-direction: column; gap: 10px; }
-        .box-info-left, .box-rsi-right { width: 100%; text-align: center; }
+        .header-layout { flex-direction: column; gap: 10px; padding: 20px 15px; }
+        .box-info, .box-rsi { width: 100%; text-align: center; }
     }
     
     input { color: #000 !important; font-weight: bold !important; background-color: white !important; }
@@ -149,13 +149,13 @@ if 'watchlist' not in st.session_state:
 st.title("📈 RSI Tracker Pro")
 
 # --- SUCHE ---
-search = st.text_input("Aktie suchen (Name/ISIN/WKN):", placeholder="Tippen zum Suchen...")
+search = st.text_input("Aktie suchen (Name/ISIN/Ticker):", placeholder="Hier tippen...")
 if len(search) > 1:
     try:
         res = yf.Search(search, max_results=5).quotes
         if res:
             opts = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in res if r.get('shortname')}
-            sel = st.selectbox("Wähle:", opts.keys())
+            sel = st.selectbox("Ergebnis wählen:", opts.keys())
             if st.button("➕ Hinzufügen"):
                 s = opts[sel]
                 if s not in st.session_state.watchlist:
@@ -166,49 +166,49 @@ if len(search) > 1:
 
 st.divider()
 
-# --- ANZEIGE DER MODULE ---
+# --- ANZEIGE DER MODULE NACH DEINER ZEICHNUNG ---
 if st.session_state.watchlist:
-    # Daten laden
-    all_data = yf.download(st.session_state.watchlist, period="3mo", interval="1d", progress=False)
+    # Batch Download für Speed
+    try:
+        all_data = yf.download(st.session_state.watchlist, period="3mo", interval="1d", progress=False)
+    except:
+        st.stop()
 
     for i, ticker in enumerate(st.session_state.watchlist):
-        color = OUTER_COLORS[i % len(OUTER_COLORS)]
+        bg_modul = COLORS[i % len(COLORS)]
         safe_id = ticker.replace(".", "").replace("-", "")
         
-        # LEVEL 1: ÄUSSERER CONTAINER (FORCED COLOR)
+        # --- DAS ÄUSSERE MODUL ---
         with st.container(border=True):
-            st.markdown(f'<div class="outer-marker" id="out-{safe_id}"></div>', unsafe_allow_html=True)
+            # Der Marker identifiziert dieses Modul für das CSS
+            st.markdown(f'<div class="stock-id-marker" id="marker-{safe_id}"></div>', unsafe_allow_html=True)
             st.markdown(f"""
                 <style>
-                div[data-testid="stVerticalBlockBorderWrapper"]:has(#out-{safe_id}) {{
-                    background-color: {color} !important;
-                    --background-color: {color};
-                    --secondary-background-color: {color};
+                div[data-testid="stVerticalBlockBorderWrapper"]:has(#marker-{safe_id}) {{
+                    background-color: {bg_modul} !important;
                 }}
                 </style>
                 """, unsafe_allow_html=True)
             
             try:
+                # Daten extrahieren
                 df = all_data.xs(ticker, axis=1, level=1) if len(st.session_state.watchlist) > 1 else all_data
                 if not df.empty:
                     rsi_v = calc_rsi(df['Close']).iloc[-1]
                     price = df['Close'].iloc[-1]
-                    
-                    # ISIN versuchen zu laden
-                    try: isin = yf.Ticker(ticker).info.get('isin', '-')
-                    except: isin = "-"
+                    eval_txt = "Überkauft" if rsi_v > 70 else ("Überverkauft" if rsi_v < 30 else "Neutral")
 
-                    # HEADER BEREICH
+                    # STUFE 1: HEADER
                     st.markdown(f"""
-                        <div class="custom-header">
-                            <div class="box-info-left">{ticker} : {isin} &nbsp; {price:.2f}</div>
-                            <div class="box-rsi-right">RSI (14): {rsi_v:.2f} - Neutral</div>
+                        <div class="header-layout">
+                            <div class="box-info">{ticker} : {price:.2f}</div>
+                            <div class="box-rsi">RSI (14): {rsi_v:.2f} - {eval_txt}</div>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    # LEVEL 2: CHART CONTAINER (FORCED PEACH)
+                    # STUFE 2: CHART (In Pfirsich-Container)
                     with st.container(border=True):
-                        st.markdown(f'<div class="chart-marker"></div>', unsafe_allow_html=True)
+                        st.markdown('<div class="chart-area-marker"></div>', unsafe_allow_html=True)
                         fig = go.Figure(go.Scatter(x=df.index, y=calc_rsi(df['Close']), line=dict(color='#1a3d5e', width=4)))
                         fig.add_hline(y=70, line_dash="dash", line_color="red")
                         fig.add_hline(y=30, line_dash="dash", line_color="green")
@@ -220,12 +220,12 @@ if st.session_state.watchlist:
                         )
                         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # LEVEL 3: BUTTON CONTAINER (FORCED GREEN)
+                    # STUFE 3: BUTTON (In Hellgrün-Container)
                     with st.container(border=True):
-                        st.markdown(f'<div class="button-marker"></div>', unsafe_allow_html=True)
+                        st.markdown('<div class="button-area-marker"></div>', unsafe_allow_html=True)
                         if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker, use_container_width=True):
                             st.session_state.watchlist.remove(ticker)
                             remove_from_db(ticker)
                             st.rerun()
-
-            except: continue
+            except:
+                continue
