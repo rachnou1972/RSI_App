@@ -6,9 +6,9 @@ import sqlite3
 import os
 
 # --- DATENBANK & SETUP ---
-DB_NAME = "watchlist_final_v100.db"
-# Hintergrundfarben für das ÄUSSERE Modul
-OUTER_COLORS = ["#1e3a8a", "#064e3b", "#581c87", "#312e81", "#134e4a"]
+DB_NAME = "watchlist_final_v200.db"
+# Die kräftigen Farben für das äußere Modul (Blau, Grün, Lila, Petrol, Anthrazit)
+OUTER_COLORS = ["#1e3a8a", "#064e3b", "#581c87", "#0f766e", "#334155"]
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -53,79 +53,90 @@ def calc_rsi(series, period=14):
 st.set_page_config(page_title="RSI Pro Tracker", layout="wide")
 init_db()
 
-# --- CSS: DAS ERZWINGT DIE VERSCHACHTELTEN FARBEN ---
+# --- CSS: DAS IST DER ULTIMATIVE VARIABLEN-FIX ---
 st.markdown("""
     <style>
+    /* Basis App */
     .stApp { background-color: #0e1117 !important; }
     
     @media (min-width: 768px) {
         .main .block-container { max-width: 950px; margin: auto; }
     }
 
-    /* 1. ÄUSSERER CONTAINER (Blau/Grün/Lila) */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.outer-anchor) {
+    /* 1. ÄUSSERES MODUL */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.outer-marker) {
         border-radius: 40px !important;
         border: none !important;
         padding: 30px !important;
         margin-bottom: 40px !important;
+        /* Wir überschreiben die Streamlit-Variablen direkt im Element */
+        --st-border-color: transparent;
     }
 
-    /* Header Zeile */
+    /* HEADER LAYOUT */
     .custom-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 20px;
+        margin-bottom: 25px;
+        width: 100%;
     }
-    .box-left {
-        background-color: #d1e8ff; 
-        padding: 10px 20px;
+    .box-info-left {
+        background-color: #d1e8ff !important; 
+        padding: 12px 20px;
         border-radius: 10px;
         color: #ff0000 !important;
         font-weight: bold;
         font-size: 1.2em;
+        box-shadow: 3px 3px 10px rgba(0,0,0,0.2);
     }
-    .box-right {
-        background-color: #ffb400; 
-        padding: 10px 20px;
+    .box-rsi-right {
+        background-color: #ffb400 !important; 
+        padding: 12px 20px;
         border-radius: 10px;
         color: black !important;
         font-weight: bold;
         font-size: 1.4em;
+        border: 2px solid black;
+        box-shadow: 3px 3px 10px rgba(0,0,0,0.2);
     }
 
-    /* 2. INNERER CONTAINER FÜR CHART (Pfirsich) */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.chart-anchor) {
+    /* 2. CHART BOX (PFIRSICH) - Wir überschreiben die Hintergrund-Variable */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.chart-marker) {
         background-color: #f7cbb4 !important;
+        --background-color: #f7cbb4;
+        --secondary-background-color: #f7cbb4;
         border-radius: 20px !important;
         padding: 15px !important;
-        border: none !important;
+        border: 1px solid rgba(0,0,0,0.1) !important;
         margin-bottom: 20px !important;
     }
 
-    /* 3. INNERER CONTAINER FÜR BUTTON (Hellgrün) */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.button-anchor) {
+    /* 3. BUTTON BOX (HELLGRÜN) */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.button-marker) {
         background-color: #c4f3ce !important;
+        --background-color: #c4f3ce;
+        --secondary-background-color: #c4f3ce;
         border-radius: 15px !important;
         padding: 0px !important;
-        border: none !important;
+        border: 1px solid rgba(0,0,0,0.1) !important;
     }
 
-    /* Button Styling */
+    /* BUTTON TEXT & STYLE */
     div.stButton > button {
         background-color: transparent !important;
         color: #1a3d34 !important;
         border: none !important;
-        height: 60px !important;
+        height: 65px !important;
         font-size: 1.6em !important;
         font-weight: bold !important;
         width: 100% !important;
     }
 
-    /* Smartphone Fix */
+    /* MOBILE OPTIMIERUNG */
     @media (max-width: 600px) {
         .custom-header { flex-direction: column; gap: 10px; }
-        .box-left, .box-right { width: 100%; text-align: center; }
+        .box-info-left, .box-rsi-right { width: 100%; text-align: center; }
     }
     
     input { color: #000 !important; font-weight: bold !important; background-color: white !important; }
@@ -138,7 +149,7 @@ if 'watchlist' not in st.session_state:
 st.title("📈 RSI Tracker Pro")
 
 # --- SUCHE ---
-search = st.text_input("Aktie suchen (Name/ISIN/WKN):", placeholder="Tippen...")
+search = st.text_input("Aktie suchen (Name/ISIN/WKN):", placeholder="Tippen zum Suchen...")
 if len(search) > 1:
     try:
         res = yf.Search(search, max_results=5).quotes
@@ -155,38 +166,49 @@ if len(search) > 1:
 
 st.divider()
 
-# --- ANZEIGE ---
+# --- ANZEIGE DER MODULE ---
 if st.session_state.watchlist:
+    # Daten laden
     all_data = yf.download(st.session_state.watchlist, period="3mo", interval="1d", progress=False)
 
     for i, ticker in enumerate(st.session_state.watchlist):
-        bg_color = OUTER_COLORS[i % len(OUTER_COLORS)]
+        color = OUTER_COLORS[i % len(OUTER_COLORS)]
         safe_id = ticker.replace(".", "").replace("-", "")
         
-        # --- LEVEL 1: ÄUSSERER KONTRAINER (FARBIG) ---
+        # LEVEL 1: ÄUSSERER CONTAINER (FORCED COLOR)
         with st.container(border=True):
-            # Anchor für das Äußere CSS
-            st.markdown(f'<div class="outer-anchor" id="out-{safe_id}"></div>', unsafe_allow_html=True)
-            st.markdown(f"<style>div[data-testid='stVerticalBlockBorderWrapper']:has(#out-{safe_id}) {{ background-color: {bg_color} !important; }}</style>", unsafe_allow_html=True)
+            st.markdown(f'<div class="outer-marker" id="out-{safe_id}"></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+                <style>
+                div[data-testid="stVerticalBlockBorderWrapper"]:has(#out-{safe_id}) {{
+                    background-color: {color} !important;
+                    --background-color: {color};
+                    --secondary-background-color: {color};
+                }}
+                </style>
+                """, unsafe_allow_html=True)
             
             try:
                 df = all_data.xs(ticker, axis=1, level=1) if len(st.session_state.watchlist) > 1 else all_data
                 if not df.empty:
                     rsi_v = calc_rsi(df['Close']).iloc[-1]
                     price = df['Close'].iloc[-1]
-                    eval_txt = "Überkauft" if rsi_v > 70 else ("Überverkauft" if rsi_v < 30 else "Neutral")
+                    
+                    # ISIN versuchen zu laden
+                    try: isin = yf.Ticker(ticker).info.get('isin', '-')
+                    except: isin = "-"
 
                     # HEADER BEREICH
                     st.markdown(f"""
                         <div class="custom-header">
-                            <div class="info-box">{ticker} : {price:.2f}</div>
-                            <div class="box-right">RSI (14): {rsi_v:.2f} - {eval_txt}</div>
+                            <div class="box-info-left">{ticker} : {isin} &nbsp; {price:.2f}</div>
+                            <div class="box-rsi-right">RSI (14): {rsi_v:.2f} - Neutral</div>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    # --- LEVEL 2: CHART CONTAINER (PFIRSICH) ---
+                    # LEVEL 2: CHART CONTAINER (FORCED PEACH)
                     with st.container(border=True):
-                        st.markdown(f'<div class="chart-anchor"></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="chart-marker"></div>', unsafe_allow_html=True)
                         fig = go.Figure(go.Scatter(x=df.index, y=calc_rsi(df['Close']), line=dict(color='#1a3d5e', width=4)))
                         fig.add_hline(y=70, line_dash="dash", line_color="red")
                         fig.add_hline(y=30, line_dash="dash", line_color="green")
@@ -198,9 +220,9 @@ if st.session_state.watchlist:
                         )
                         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # --- LEVEL 3: BUTTON CONTAINER (HELLGRÜN) ---
+                    # LEVEL 3: BUTTON CONTAINER (FORCED GREEN)
                     with st.container(border=True):
-                        st.markdown(f'<div class="button-anchor"></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="button-marker"></div>', unsafe_allow_html=True)
                         if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker, use_container_width=True):
                             st.session_state.watchlist.remove(ticker)
                             remove_from_db(ticker)
