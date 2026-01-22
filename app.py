@@ -5,12 +5,11 @@ import plotly.graph_objects as go
 import sqlite3
 import os
 
-# --- KONFIGURATION ---
-DB_NAME = "watchlist_ultimate_v60.db"
-# Kräftige Modul-Farben (Blau, Grün, Lila, Petrol, Anthrazit)
-COLORS = ["#1e3a8a", "#064e3b", "#581c87", "#0f766e", "#1e40af"]
+# --- DATENBANK ---
+DB_NAME = "watchlist_final_pro.db"
+# Kräftige Modul-Farben (Blau, Dunkelgrün, Weinrot, Violett, Petrol)
+COLORS = ["#1e3a8a", "#064e3b", "#581c87", "#312e81", "#134e4a"]
 
-# --- BASIS FUNKTIONEN ---
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -54,87 +53,71 @@ def calc_rsi(series, period=14):
 st.set_page_config(page_title="RSI Tracker Ultimate", layout="wide")
 init_db()
 
-# --- CSS: DAS ERZWINGT DIE FARBEN UND ENTFERNT SCHWARZE LÜCKEN ---
+# --- BASIS CSS ---
 st.markdown("""
     <style>
-    /* Hintergrund der gesamten Seite */
     .stApp { background-color: #0e1117 !important; }
     
     @media (min-width: 768px) {
         .main .block-container { max-width: 900px; margin: auto; }
     }
 
-    /* WICHTIG: Entfernt alle Standard-Abstände (Gaps) von Streamlit innerhalb des Moduls */
-    div[data-testid="stVerticalBlock"]:has(> div > div > .module-marker) {
-        gap: 0px !important;
-    }
-
-    /* Das umschließende farbige Modul-Element */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.module-marker) {
+    /* Diese Regeln bereiten die Streamlit-Container auf die Farbinjektion vor */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 40px !important;
-        padding: 0px !important; /* Padding wird über die inneren Elemente gesteuert */
-        margin-bottom: 50px !important;
         border: none !important;
+        margin-bottom: 40px !important;
         overflow: hidden !important;
     }
 
-    /* --- STUFE 1: HEADER --- */
-    .header-section {
+    /* Header Design */
+    .custom-header-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 30px 25px 20px 25px;
         width: 100%;
+        margin-bottom: 15px;
     }
     .info-box {
         background-color: #d1e8ff; 
-        padding: 10px 20px;
-        border-radius: 8px;
-        color: #ff0000; /* Ticker in Rot */
+        padding: 10px 15px;
+        border-radius: 5px;
+        color: #ff0000 !important;
         font-weight: bold;
-        font-size: 1.2em;
+        font-size: 1.1em;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
     }
     .rsi-box {
         background-color: #ffb400; 
-        padding: 10px 20px;
-        border-radius: 8px;
-        color: black;
+        padding: 10px 15px;
+        border-radius: 5px;
+        color: black !important;
         font-weight: bold;
-        font-size: 1.4em;
-        border: 2px solid black;
+        font-size: 1.2em;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
     }
 
-    /* --- STUFE 2: CHART (Pfirsich) --- */
-    .chart-container {
-        padding: 0 25px 25px 25px; /* Erzeugt den farbigen Rand des Moduls um den Chart */
+    /* Chart & Button Container Styling */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.chart-marker) {
+        background-color: #f7cbb4 !important; /* Pfirsich */
+        padding: 10px !important;
+        border-radius: 20px !important;
     }
-    .chart-peach-box {
-        background-color: #f7cbb4;
-        border-radius: 20px;
-        padding: 15px;
-        border: 1px solid rgba(0,0,0,0.1);
-    }
-
-    /* --- STUFE 3: BUTTON (Hellgrün) --- */
-    .button-container {
-        padding: 0 25px 30px 25px; /* Erzeugt den farbigen Rand um den Button */
-    }
-    div.stButton > button {
-        background-color: #c4f3ce !important; 
-        color: #1a3d34 !important;
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.button-marker) {
+        background-color: #c4f3ce !important; /* Hellgrün */
+        padding: 0px !important;
         border-radius: 15px !important;
-        height: 60px !important;
-        font-size: 1.6em !important;
-        font-weight: bold !important;
-        border: 2px solid rgba(0,0,0,0.1) !important;
-        width: 100% !important;
     }
 
-    /* Smartphone Optimierung */
-    @media (max-width: 600px) {
-        .header-section { flex-direction: column; gap: 15px; padding: 20px 15px; }
-        .info-box, .rsi-box { width: 100%; text-align: center; }
-        div.stButton > button { font-size: 1.3em !important; }
+    /* Button Fix */
+    div.stButton > button {
+        background-color: transparent !important;
+        color: #1a3d34 !important;
+        border: none !important;
+        height: 60px !important;
+        width: 100% !important;
+        font-size: 1.5em !important;
+        font-weight: bold !important;
     }
     
     input { color: #000 !important; font-weight: bold !important; background-color: white !important; }
@@ -147,13 +130,13 @@ if 'watchlist' not in st.session_state:
 st.title("📈 RSI Tracker Pro")
 
 # --- SUCHE ---
-search = st.text_input("Aktie / ISIN / WKN suchen:", placeholder="Tippen zum Suchen...")
+search = st.text_input("Suchen (Name/ISIN/Ticker):", placeholder="Tippen zum Suchen...")
 if len(search) > 1:
     try:
         res = yf.Search(search, max_results=5).quotes
         if res:
             opts = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in res if r.get('shortname')}
-            sel = st.selectbox("Ergebnis wählen:", opts.keys())
+            sel = st.selectbox("Auswählen:", opts.keys())
             if st.button("➕ Hinzufügen", use_container_width=True):
                 s = opts[sel]
                 if s not in st.session_state.watchlist:
@@ -164,71 +147,77 @@ if len(search) > 1:
 
 st.divider()
 
-# --- ANZEIGE DER MODULE NACH DEINER ZEICHNUNG ---
+# --- ANZEIGE ---
 if st.session_state.watchlist:
-    # Batch Download für Geschwindigkeit
+    # Daten laden
     try:
         all_data = yf.download(st.session_state.watchlist, period="3mo", interval="1d", progress=False)
     except:
-        st.error("Datenfehler.")
         st.stop()
 
     for i, ticker in enumerate(st.session_state.watchlist):
-        bg_color = COLORS[i % len(COLORS)]
+        color = COLORS[i % len(COLORS)]
         safe_id = ticker.replace(".", "").replace("-", "")
         
-        # DER CONTAINER UM ALLES (Das Modul)
+        # --- FARBINJEKTION: DAS ERZWINGT DEN HINTERGRUND ---
+        # Wir suchen den äußeren Wrapper und färben ihn ein.
+        st.markdown(f"""
+            <style>
+            div[data-testid="stVerticalBlockBorderWrapper"]:has(#outer-{safe_id}) {{
+                background-color: {color} !important;
+                padding: 25px !important;
+            }}
+            /* Entferne Abstände zwischen den Stufen */
+            div[data-testid="stVerticalBlockBorderWrapper"]:has(#outer-{safe_id}) div[data-testid="stVerticalBlock"] {{
+                gap: 15px !important;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
+
         with st.container(border=True):
-            # Der Marker und das CSS erzwingen die Hintergrundfarbe des Moduls
-            st.markdown(f"""
-                <div class="module-marker" id="mark-{safe_id}"></div>
-                <style>
-                div[data-testid="stVerticalBlockBorderWrapper"]:has(#mark-{safe_id}) {{
-                    background-color: {bg_color} !important;
-                }}
-                </style>
-                """, unsafe_allow_html=True)
+            # Der Marker für den äußeren Block
+            st.markdown(f'<div id="outer-{safe_id}" class="outer-marker"></div>', unsafe_allow_html=True)
             
             try:
-                # Daten extrahieren
-                if len(st.session_state.watchlist) > 1:
-                    df = all_data.xs(ticker, axis=1, level=1)
-                else:
-                    df = all_data
+                # Daten Extraktion
+                df = all_data.xs(ticker, axis=1, level=1) if len(st.session_state.watchlist) > 1 else all_data
                 
                 if not df.empty:
                     rsi_v = calc_rsi(df['Close']).iloc[-1]
                     price = df['Close'].iloc[-1]
-                    eval_txt = "Überkauft" if rsi_v > 70 else ("Überverkauft" if rsi_v < 30 else "Neutral")
-
+                    # ISIN/Name Suche
+                    t_info = yf.Ticker(ticker)
+                    display_name = t_info.info.get('shortName', ticker)
+                    
                     # STUFE 1: HEADER
                     st.markdown(f"""
-                        <div class="header-section">
-                            <div class="info-box">{ticker} : {price:.2f}</div>
-                            <div class="rsi-box">RSI (14): {rsi_v:.2f} - {eval_txt}</div>
+                        <div class="custom-header-row">
+                            <div class="info-box">{ticker} : {display_name} | {price:.2f}</div>
+                            <div class="rsi-box">RSI (14): {rsi_v:.2f}</div>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    # STUFE 2: CHART IN PFIRSICH BOX
-                    st.markdown('<div class="chart-container"><div class="chart-peach-box">', unsafe_allow_html=True)
-                    fig = go.Figure(go.Scatter(x=df.index, y=calc_rsi(df['Close']), line=dict(color='#1a3d5e', width=4)))
-                    fig.add_hline(y=70, line_dash="dash", line_color="red")
-                    fig.add_hline(y=30, line_dash="dash", line_color="green")
-                    fig.update_layout(
-                        height=220, margin=dict(l=10,r=10,t=10,b=10),
-                        paper_bgcolor='#f7cbb4', plot_bgcolor='#f7cbb4',
-                        font=dict(color="#1a3d5e", size=11),
-                        xaxis=dict(showgrid=False), yaxis=dict(range=[0,100], showgrid=False)
-                    )
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-                    st.markdown('</div></div>', unsafe_allow_html=True)
+                    # STUFE 2: CHART (In Pfirsich Box)
+                    with st.container(border=True):
+                        st.markdown('<div class="chart-marker"></div>', unsafe_allow_html=True)
+                        fig = go.Figure(go.Scatter(x=df.index, y=calc_rsi(df['Close']), line=dict(color='#1a3d5e', width=4)))
+                        fig.add_hline(y=70, line_dash="dash", line_color="red")
+                        fig.add_hline(y=30, line_dash="dash", line_color="green")
+                        fig.update_layout(
+                            height=220, margin=dict(l=10,r=10,t=10,b=10),
+                            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                            font=dict(color="#1a3d5e", size=12),
+                            xaxis=dict(showgrid=False), yaxis=dict(range=[0,100], showgrid=False)
+                        )
+                        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    # STUFE 3: BUTTON
-                    st.markdown('<div class="button-container">', unsafe_allow_html=True)
-                    if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker, use_container_width=True):
-                        st.session_state.watchlist.remove(ticker)
-                        remove_from_db(ticker)
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-            except: continue
+                    # STUFE 3: BUTTON (In Grün Box)
+                    with st.container(border=True):
+                        st.markdown('<div class="button-marker"></div>', unsafe_allow_html=True)
+                        if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker, use_container_width=True):
+                            st.session_state.watchlist.remove(ticker)
+                            remove_from_db(ticker)
+                            st.rerun()
+                
+            except Exception as e:
+                st.error(f"Fehler bei {ticker}")
