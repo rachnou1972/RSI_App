@@ -7,8 +7,9 @@ import os
 
 # --- DATENBANK ---
 DB_NAME = "watchlist_final_master.db"
-# Kräftige Farben für das umschließende Modul
+# Kräftige Farben für jedes Aktien-Modul
 COLORS = ["#1e3a8a", "#064e3b", "#581c87", "#0f766e", "#334155"]
+
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -16,6 +17,7 @@ def init_db():
     c.execute('CREATE TABLE IF NOT EXISTS watchlist (symbol TEXT PRIMARY KEY)')
     conn.commit()
     conn.close()
+
 
 def load_watchlist():
     conn = sqlite3.connect(DB_NAME)
@@ -26,14 +28,17 @@ def load_watchlist():
     if not data: return ["AAPL", "TSLA"]
     return data
 
+
 def add_to_db(symbol):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     try:
         c.execute('INSERT OR REPLACE INTO watchlist VALUES (?)', (symbol,))
         conn.commit()
-    except: pass
+    except:
+        pass
     conn.close()
+
 
 def remove_from_db(symbol):
     conn = sqlite3.connect(DB_NAME)
@@ -42,24 +47,26 @@ def remove_from_db(symbol):
     conn.commit()
     conn.close()
 
+
 def calc_rsi(series, period=14):
-    if len(series) < period: return pd.Series([50]*len(series))
+    if len(series) < period: return pd.Series([50] * len(series))
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     return 100 - (100 / (1 + (gain / loss)))
 
+
 # --- UI SETUP ---
 st.set_page_config(page_title="RSI Tracker", layout="wide")
 init_db()
 
-# --- CSS: DAS ERZWINGT DIE FARBEN AUCH IN DER CLOUD ---
+# --- NEUES CSS FÜR DAS BILD-LIKE LAYOUT ---
 st.markdown("""
     <style>
     /* Hintergrund der Seite */
     .stApp { background-color: #0e1117 !important; }
-    
-    /* Laptop-Zentrierung (850px breit und mittig) */
+
+    /* Zentrierung des Hauptinhalts */
     @media (min-width: 768px) {
         .main .block-container { 
             max-width: 850px !important; 
@@ -68,76 +75,170 @@ st.markdown("""
         }
     }
 
-    /* 1. DAS GESAMTE MODUL (UMSCHLIESSENDER RAHMEN) */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.outer-marker) {
-        border-radius: 40px !important;
-        border: none !important;
+    /* AKTIEN-MODUL STYLING (wie auf dem Bild) */
+    .stock-module {
+        border-radius: 20px !important;
         padding: 0px !important;
-        margin-bottom: 50px !important;
+        margin-bottom: 30px !important;
         overflow: hidden !important;
-    }
-    
-    /* Entfernt Abstände zwischen den Elementen im Modul */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.outer-marker) > div[data-testid="stVerticalBlock"] {
-        gap: 0px !important;
+        border: 2px solid rgba(255, 255, 255, 0.1) !important;
     }
 
-    /* 2. STUFE: HEADER BEREICH */
-    .header-box {
+    /* HEADER-BEREICH mit Symbol, ISIN, Preis */
+    .module-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 25px 25px 15px 25px;
-        width: 100%;
-    }
-    .tag-info {
-        background-color: #d1e8ff; padding: 10px 20px; border-radius: 8px;
-        color: #ff0000 !important; font-weight: bold; font-size: 1.1em;
-    }
-    .tag-rsi {
-        background-color: #ffb400; padding: 10px 20px; border-radius: 8px;
-        color: black !important; font-weight: bold; font-size: 1.3em; border: 2px solid black;
+        padding: 20px 25px 15px 25px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
     }
 
-    /* 3. STUFE: CHART CONTAINER (PFIRSICH) */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.chart-marker) {
-        background-color: #f7cbb4 !important;
-        margin: 0 25px 20px 25px !important;
-        border-radius: 20px !important;
+    .symbol-section {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .symbol-name {
+        font-size: 1.8em !important;
+        font-weight: bold !important;
+        color: white !important;
+        margin: 0 !important;
+    }
+
+    .symbol-details {
+        font-size: 0.9em !important;
+        color: rgba(255, 255, 255, 0.8) !important;
+        margin: 0 !important;
+    }
+
+    .price-section {
+        text-align: right;
+    }
+
+    .current-price {
+        font-size: 2em !important;
+        font-weight: bold !important;
+        color: white !important;
+        margin: 0 !important;
+    }
+
+    /* RSI-BEWERTUNGSBEREICH */
+    .rsi-section {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px 25px;
+        background-color: rgba(0, 0, 0, 0.2);
+    }
+
+    .rsi-value {
+        font-size: 1.8em !important;
+        font-weight: bold !important;
+        color: white !important;
+        margin: 0 !important;
+    }
+
+    .rsi-label {
+        font-size: 1.1em !important;
+        color: rgba(255, 255, 255, 0.9) !important;
+        margin: 0 !important;
+    }
+
+    .rsi-evaluation {
+        font-size: 1.3em !important;
+        font-weight: bold !important;
+        padding: 8px 20px;
+        border-radius: 20px;
+        text-align: center;
+        min-width: 150px;
+    }
+
+    .rsi-overbought {
+        background-color: #ff4444 !important;
+        color: white !important;
+    }
+
+    .rsi-oversold {
+        background-color: #44ff44 !important;
+        color: black !important;
+    }
+
+    .rsi-neutral {
+        background-color: #ffaa00 !important;
+        color: black !important;
+    }
+
+    /* CHART-BEREICH */
+    .chart-container {
+        background-color: rgba(255, 255, 255, 0.95) !important;
+        margin: 0px !important;
         padding: 15px !important;
-        border: 1px solid rgba(0,0,0,0.1) !important;
+        border-radius: 0px !important;
     }
 
-    /* 4. STUFE: BUTTON CONTAINER (GRÜN) */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.button-marker) {
-        background-color: #c4f3ce !important;
-        margin: 0 25px 30px 25px !important;
-        border-radius: 15px !important;
+    /* BUTTON-BEREICH */
+    .button-container {
+        background-color: rgba(255, 255, 255, 0.1) !important;
         padding: 0px !important;
-        border: 1px solid rgba(0,0,0,0.1) !important;
+        margin: 0px !important;
+        border-radius: 0px !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
     }
 
-    /* Button Styling */
-    div.stButton > button {
+    /* Entfernen-Button Styling */
+    .stButton > button {
         background-color: transparent !important;
-        color: #1a3d34 !important;
+        color: white !important;
         border: none !important;
         height: 60px !important;
-        font-size: 1.5em !important;
+        font-size: 1.3em !important;
         font-weight: bold !important;
         width: 100% !important;
+        border-radius: 0px !important;
+        transition: background-color 0.3s !important;
+    }
+
+    .stButton > button:hover {
+        background-color: rgba(255, 0, 0, 0.2) !important;
+    }
+
+    /* Suchfeld Styling */
+    .stTextInput > div > div > input {
+        color: #000 !important;
+        font-weight: bold !important;
+        background-color: white !important;
+        border-radius: 10px !important;
+        padding: 12px !important;
     }
 
     /* Smartphone Optimierung */
     @media (max-width: 600px) {
-        .header-box { flex-direction: column; gap: 10px; padding: 20px 15px; }
-        .tag-info, .tag-rsi { width: 100%; text-align: center; }
+        .module-header { 
+            flex-direction: column; 
+            text-align: center;
+            gap: 10px; 
+            padding: 15px; 
+        }
+        
+        .price-section {
+            text-align: center;
+        }
+        
+        .rsi-section {
+            flex-direction: column;
+            gap: 10px;
+            text-align: center;
+        }
+        
+        .symbol-name { font-size: 1.5em !important; }
+        .current-price { font-size: 1.7em !important; }
     }
-    
-    input { color: #000 !important; font-weight: bold !important; background-color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
+# Session State initialisieren
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_watchlist()
 
@@ -151,74 +252,149 @@ if len(search) > 1:
         if res:
             opts = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in res if r.get('shortname')}
             sel = st.selectbox("Ergebnis wählen:", opts.keys())
-            if st.button("➕ Hinzufügen", key="add_btn"):
-                s = opts[sel]
-                if s not in st.session_state.watchlist:
-                    st.session_state.watchlist.append(s)
-                    add_to_db(s)
-                    st.rerun()
-    except: pass
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                if st.button("➕ Hinzufügen", key="add_btn"):
+                    s = opts[sel]
+                    if s not in st.session_state.watchlist:
+                        st.session_state.watchlist.append(s)
+                        add_to_db(s)
+                        st.rerun()
+    except:
+        pass
 
 st.divider()
 
-# --- ANZEIGE DER MODULE NACH ZEICHNUNG ---
+# --- ANZEIGE DER MODULE ---
 if st.session_state.watchlist:
-    # Daten Batch-Download
+    # Batch-Download aller Aktiendaten
     all_data = yf.download(st.session_state.watchlist, period="3mo", interval="1d", progress=False)
 
     for i, ticker in enumerate(st.session_state.watchlist):
         color = COLORS[i % len(COLORS)]
         safe_id = ticker.replace(".", "").replace("-", "")
         
-        # --- LEVEL 1: ÄUSSERER CONTAINER ---
-        # Wir erzeugen ein modulspezifisches CSS für JEDEN Ticker einzeln.
+        # Versuche, zusätzliche Informationen über die Aktie zu bekommen
+        try:
+            stock_info = yf.Ticker(ticker).info
+            company_name = stock_info.get('longName', ticker)
+            # Für echte ISIN müsstest du eine andere API oder Datenquelle nutzen
+            isin_display = f"ISIN: US{ticker.ljust(9, '0')[:9]}0"  # Platzhalter
+        except:
+            company_name = ticker
+            isin_display = "ISIN: -"
+        
+        # CSS für jedes Modul mit eigener Farbe
         st.markdown(f"""
             <style>
-            div[data-testid="stVerticalBlockBorderWrapper"]:has(#outer-{safe_id}) {{
+            #module-{safe_id} {{
                 background-color: {color} !important;
             }}
             </style>
             """, unsafe_allow_html=True)
-
-        with st.container(border=True):
-            # Der Marker identifiziert diesen Block
-            st.markdown(f'<div class="outer-marker" id="outer-{safe_id}"></div>', unsafe_allow_html=True)
+        
+        # Hauptcontainer für jede Aktie
+        with st.container():
+            st.markdown(f'<div class="stock-module" id="module-{safe_id}">', unsafe_allow_html=True)
             
             try:
-                df = all_data.xs(ticker, axis=1, level=1) if len(st.session_state.watchlist) > 1 else all_data
-                if not df.empty:
-                    rsi_v = calc_rsi(df['Close']).iloc[-1]
+                # Daten für diese spezifische Aktie extrahieren
+                if len(st.session_state.watchlist) > 1:
+                    df = all_data.xs(ticker, axis=1, level=1)
+                else:
+                    df = all_data
+                
+                if not df.empty and len(df) > 14:
+                    # RSI und Preis berechnen
+                    rsi_series = calc_rsi(df['Close'])
+                    rsi_value = rsi_series.iloc[-1]
                     price = df['Close'].iloc[-1]
-                    eval_txt = "Überkauft" if rsi_v > 70 else ("Überverkauft" if rsi_v < 30 else "Neutral")
-
-                    # HEADER BEREICH (INFO & RSI)
+                    
+                    # RSI Bewertung
+                    if rsi_value > 70:
+                        eval_txt = "Überkauft"
+                        eval_class = "rsi-overbought"
+                    elif rsi_value < 30:
+                        eval_txt = "Überverkauft"
+                        eval_class = "rsi-oversold"
+                    else:
+                        eval_txt = "Neutral"
+                        eval_class = "rsi-neutral"
+                    
+                    # --- HEADER: Symbol, ISIN, Preis ---
                     st.markdown(f"""
-                        <div class="header-box">
-                            <div class="tag-info">{ticker} : {price:.2f}</div>
-                            <div class="tag-rsi">RSI (14): {rsi_v:.2f} - {eval_txt}</div>
+                        <div class="module-header">
+                            <div class="symbol-section">
+                                <div class="symbol-name">{ticker}</div>
+                                <div class="symbol-details">{company_name}<br>{isin_display}</div>
+                            </div>
+                            <div class="price-section">
+                                <div class="current-price">{price:.2f} USD</div>
+                            </div>
                         </div>
                     """, unsafe_allow_html=True)
-
-                    # --- LEVEL 2: CHART CONTAINER (PFIRSICH) ---
-                    with st.container(border=True):
-                        st.markdown('<div class="chart-marker"></div>', unsafe_allow_html=True)
-                        fig = go.Figure(go.Scatter(x=df.index, y=calc_rsi(df['Close']), line=dict(color='#1a3d5e', width=4)))
-                        fig.add_hline(y=70, line_dash="dash", line_color="red")
-                        fig.add_hline(y=30, line_dash="dash", line_color="green")
-                        fig.update_layout(
-                            height=220, margin=dict(l=10,r=10,t=10,b=10),
-                            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                            font=dict(color="#1a3d5e", size=11),
-                            xaxis=dict(showgrid=False), yaxis=dict(range=[0,100], showgrid=False)
+                    
+                    # --- RSI BEWERTUNG ---
+                    st.markdown(f"""
+                        <div class="rsi-section">
+                            <div>
+                                <div class="rsi-label">RSI (14)</div>
+                                <div class="rsi-value">{rsi_value:.2f}</div>
+                            </div>
+                            <div class="rsi-evaluation {eval_class}">
+                                {eval_txt}
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # --- CHART ---
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    fig = go.Figure(
+                        go.Scatter(
+                            x=df.index, 
+                            y=rsi_series, 
+                            line=dict(color='#1a3d5e', width=3),
+                            fill='tozeroy',
+                            fillcolor='rgba(26, 61, 94, 0.1)'
                         )
-                        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-                    # --- LEVEL 3: BUTTON CONTAINER (HELLGRÜN) ---
-                    with st.container(border=True):
-                        st.markdown('<div class="button-marker"></div>', unsafe_allow_html=True)
-                        if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker, use_container_width=True):
-                            st.session_state.watchlist.remove(ticker)
-                            remove_from_db(ticker)
-                            st.rerun()
-
-            except: continue
+                    )
+                    fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.7)
+                    fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.7)
+                    fig.update_layout(
+                        height=200, 
+                        margin=dict(l=0, r=0, t=0, b=0),
+                        paper_bgcolor='rgba(0,0,0,0)', 
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        font=dict(color="#333", size=10),
+                        xaxis=dict(
+                            showgrid=False,
+                            showticklabels=False
+                        ), 
+                        yaxis=dict(
+                            range=[0, 100], 
+                            showgrid=False,
+                            title_text="RSI"
+                        ),
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    # --- ENTFERNEN BUTTON ---
+                    st.markdown('<div class="button-container">', unsafe_allow_html=True)
+                    if st.button(f"🗑️ {ticker} entfernen", key=f"del_{safe_id}", use_container_width=True):
+                        st.session_state.watchlist.remove(ticker)
+                        remove_from_db(ticker)
+                        st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                else:
+                    st.error(f"Keine ausreichenden Daten für {ticker}")
+                    
+            except Exception as e:
+                st.error(f"Fehler beim Laden von {ticker}: {str(e)}")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+else:
+    st.info("Keine Aktien in der Watchlist. Füge Aktien über das Suchfeld oben hinzu.")
