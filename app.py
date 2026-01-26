@@ -12,17 +12,17 @@ def trigger_rerun():
     else: st.experimental_rerun()
 
 def load_from_secrets():
-    """Lädt die Liste beim Start zwingend aus den Secrets (START_STOCKS)"""
+    """Lädt die Liste beim Start aus den Secrets (START_STOCKS)"""
     try:
-        # Holt START_STOCKS = "TL0.TG,APC.TG" aus den Secrets
-        secret_string = st.secrets.get("START_STOCKS", "AAPL,TSLA")
+        secret_string = st.secrets.get("START_STOCKS", "TL0.TG,APC.TG")
         return [s.strip() for s in secret_string.split(",") if s.strip()]
     except:
-        return ["AAPL"]
+        return ["TL0.TG"]
 
 @st.cache_data(ttl=60)
 def fetch_stock_data(tickers):
     if not tickers: return pd.DataFrame()
+    # Wir laden die Daten. Yahoo liefert Gettex (.TG) direkt in Euro.
     data = yf.download(tickers, period="6mo", interval="1d", progress=False)
     return data.ffill()
 
@@ -33,94 +33,61 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + (gain / loss)))
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI Ultimate Tracker", layout="wide")
+st.set_page_config(page_title="RSI Gettex Tracker", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
-    
-    /* Zentrierung auf Laptop (850px) */
-    @media (min-width: 768px) {
-        .main .block-container { max-width: 850px; margin: auto; }
-    }
-
-    /* Das 3-Stufen-Modul */
-    .stock-module {
-        padding: 25px;
-        border-radius: 20px;
-        margin-bottom: 30px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    }
-
-    .header-main-text { font-size: 1.6em; font-weight: bold; }
-    
-    .rsi-bubble {
-        padding: 10px 20px;
-        border-radius: 12px;
-        font-weight: bold;
-        text-align: center;
-        border: 2px solid;
-        min-width: 140px;
-    }
-    
+    @media (min-width: 768px) { .main .block-container { max-width: 850px; margin: auto; } }
+    .stock-module { padding: 25px; border-radius: 20px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .header-main-text { font-size: 1.5em; font-weight: bold; }
+    .rsi-bubble { padding: 10px 20px; border-radius: 12px; font-weight: bold; text-align: center; border: 2px solid; min-width: 140px; }
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.1); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.1); }
-
-    /* Button Design */
-    div.stButton > button {
-        background-color: #4e8cff !important;
-        color: white !important;
-        border-radius: 12px;
-        width: 100%;
-        font-weight: bold;
-        height: 45px;
-        border: none;
-    }
-    
-    .btn-del > div.stButton > button {
-        background-color: rgba(255,255,255,0.1) !important;
-        margin-top: 15px;
-        border: 1px solid rgba(255,255,255,0.2) !important;
-    }
-    .btn-del > div.stButton > button:hover { background-color: #ff4e4e !important; }
-
+    div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 45px; border: none; }
+    .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.1) !important; margin-top: 15px; }
     input { color: #000 !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# BEIM START: Liste aus Secrets laden
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
-# --- SIDEBAR (DER BEREICH FÜR DIE LISTE / BACKUP) ---
+# --- SIDEBAR (BACKUP BEREICH) ---
 with st.sidebar:
-    st.header("📋 Aktuelle Liste (Backup)")
-    st.write("Kopiere diesen Text für deine Secrets:")
+    st.header("📋 Liste Verwalten")
+    st.info("Nutze Symbole mit '.TG' für finanzen.net zero (Gettex) Preise.")
     current_list_str = ",".join(st.session_state.watchlist)
-    st.text_area("In START_STOCKS speichern:", value=current_list_str, height=150)
-    
-    if st.button("🔄 Liste aus Secrets neu laden"):
+    st.text_area("Kopieren für Secrets:", value=current_list_str, height=150)
+    if st.button("🔄 Liste aus Secrets laden"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
         trigger_rerun()
 
-st.title("📈 RSI Tracker")
+st.title("📈 RSI Tracker (Euro Preise)")
 
-# MANUELLES UPDATE
+# UPDATE BUTTON
 if st.button("🔄 Marktdaten aktualisieren", use_container_width=True):
-    with st.spinner("Aktualisiere Kurse..."):
-        st.cache_data.clear()
-        trigger_rerun()
+    st.cache_data.clear()
+    trigger_rerun()
 
-# SUCHE
-search = st.text_input("Aktie hinzufügen...", placeholder="Name, ISIN oder Symbol...")
+# --- SUCHE (Optimiert auf Gettex) ---
+search = st.text_input("Aktie suchen (Tipp: Suche nach ISIN oder Name)...", placeholder="z.B. Tesla, Apple...")
 if search:
     try:
-        s_res = yf.Search(search, max_results=8).quotes
+        s_res = yf.Search(search, max_results=10).quotes
         if s_res:
-            options = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in s_res if r.get('symbol')}
-            sel = st.selectbox("Ergebnis wählen:", options.keys())
+            options = {}
+            for r in s_res:
+                sym = str(r.get('symbol'))
+                name = r.get('shortname', 'Info')
+                exch = r.get('exchDisp', 'Börse')
+                # Bevorzuge Gettex für finanzen.net zero User
+                label = f"{name} ({sym}) - Börse: {exch}"
+                options[label] = sym
+            
+            sel = st.selectbox("Wähle die Aktie (Tipp: Nutze '.TG' für Gettex):", options.keys())
             if st.button("➕ Hinzufügen"):
                 sym = options[sel]
                 if sym not in st.session_state.watchlist:
@@ -134,37 +101,39 @@ st.divider()
 
 # --- ANZEIGE DER MODULE ---
 if st.session_state.watchlist:
-    with st.spinner("Hole Marktdaten..."):
+    with st.spinner("Hole Kurse..."):
         all_data = fetch_stock_data(st.session_state.watchlist)
     
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
             
-            # Datenextraktion (Handling für Einzel/Mehrfach Ticker)
+            # Datenextraktion
             if len(st.session_state.watchlist) > 1:
                 df = all_data['Close'][ticker].dropna()
             else:
                 df = all_data['Close'].dropna()
             
             if not df.empty:
-                # Firmen-Details
-                t_info = yf.Ticker(ticker)
-                full_name = t_info.info.get('longName') or t_info.info.get('shortName') or ticker
+                t_obj = yf.Ticker(ticker)
+                # Den echten Namen und Währung holen
+                full_name = t_obj.info.get('longName') or ticker
+                currency = t_obj.info.get('currency', 'EUR')
                 price = df.iloc[-1]
                 
-                # RSI
+                # RSI berechnen
                 rsi_series = calc_rsi(df)
                 rsi_val = rsi_series.iloc[-1]
                 
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
-                txt = "KAUFEN" if rsi_val < 30 else "VERKAUFEN" if rsi_val > 70 else "NEUTRAL"
+                txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
+                symbol_currency = "€" if "TG" in ticker or "DE" in ticker or currency == "EUR" else "$"
 
-                # DAS MODUL (STUFE 1: Header | STUFE 2: Chart | STUFE 3: Button)
+                # DAS MODUL
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <div class="header-main-text">{full_name.upper()}: {ticker} {price:.2f} €</div>
+                        <div class="header-main-text">{full_name.upper()}: {ticker} {price:.2f} {symbol_currency}</div>
                         <div class="rsi-bubble {cl}">RSI: {rsi_val:.2f}<br>{txt}</div>
                     </div>
                 """, unsafe_allow_html=True)
