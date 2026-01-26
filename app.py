@@ -2,72 +2,20 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-import sqlite3
-import os
 
-# --- KONFIGURATION ---
-DB_NAME = "watchlist_module.db"
-# Kräftige Modul-Farben
-COLORS = ["#1e3b4f", "#2b306b", "#1e4f3e", "#3e1e4f", "#4f3a1e"]
-
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS watchlist (symbol TEXT PRIMARY KEY)')
-    conn.commit()
-    conn.close()
-
-def load_watchlist():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('SELECT symbol FROM watchlist')
-    data = [row[0] for row in c.fetchall()]
-    conn.close()
-    if not data:
-        try:
-            secret_list = st.secrets.get("START_STOCKS", "")
-            if secret_list:
-                data = [s.strip() for s in secret_list.split(",") if s.strip()]
-                for s in data: add_to_db(s)
-        except: data = ["AAPL"]
-    return data
-
-def add_to_db(symbol):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+# --- DATEN-MANAGEMENT (Master-Liste aus Secrets) ---
+def load_master_watchlist():
+    """Lädt die Liste aus den Streamlit Secrets (Variable: START_STOCKS)"""
     try:
-        c.execute('INSERT OR REPLACE INTO watchlist VALUES (?)', (symbol,))
-        conn.commit()
-    except: pass
-    conn.close()
-
-def remove_from_db(symbol):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('DELETE FROM watchlist WHERE symbol = ?', (symbol,))
-    conn.commit()
-    conn.close()
+        # Erwartet einen String wie: "AAPL,TSLA,MSFT"
+        secret_list = st.secrets.get("START_STOCKS", "AAPL")
+        return [s.strip() for s in secret_list.split(",") if s.strip()]
+    except:
+        return ["AAPL"]
 
 def trigger_rerun():
     if hasattr(st, "rerun"): st.rerun()
     else: st.experimental_rerun()
-
-# --- SICHERHEIT ---
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.title("🔒 Trader Login")
-        try: pw = st.secrets["MY_PASSWORD"]
-        except: st.error("Secrets fehlen!"); st.stop()
-        u_input = st.text_input("Passwort", type="password")
-        if st.button("Anmelden", use_container_width=True):
-            if user_input == pw:
-                st.session_state.password_correct = True
-                trigger_rerun()
-            else: st.error("Falsch!")
-        return False
-    return True
-
-if not check_password(): st.stop()
 
 # --- DATEN LOGIK ---
 @st.cache_data(ttl=300)
@@ -82,8 +30,10 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + (gain / loss)))
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI Tracker", layout="wide")
-init_db()
+st.set_page_config(page_title="RSI Master Tracker", layout="wide")
+
+# Kräftige Farben für die Module
+COLORS = ["#1e3b4f", "#2b306b", "#1e4f3e", "#3e1e4f", "#4f3a1e"]
 
 # CSS für das 3-Stufen-Modul
 st.markdown("""
@@ -99,10 +49,10 @@ st.markdown("""
         padding: 20px;
         border-radius: 20px;
         margin-bottom: 30px;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.5);
     }
 
-    /* Stufe 1: Header */
+    /* Stufe 1: Header (Name, ISIN, Preis, Bubble) */
     .module-header {
         display: flex;
         justify-content: space-between;
@@ -112,21 +62,20 @@ st.markdown("""
     .header-left { display: flex; align-items: baseline; gap: 15px; }
     .header-name { font-size: 2.2em; font-weight: bold; }
     .header-isin { font-size: 0.9em; color: #ccc; }
-    .header-price { font-size: 1.8em; font-weight: bold; color: #fff; }
+    .header-price { font-size: 1.8em; font-weight: bold; }
 
-    /* Die RSI Bubble */
     .rsi-bubble {
-        padding: 10px 20px;
+        padding: 8px 18px;
         border-radius: 50px;
         font-weight: bold;
-        font-size: 1.2em;
+        font-size: 1.1em;
         border: 2px solid;
     }
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.15); }
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.15); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.15); }
 
-    /* Button Styling */
+    /* Stufe 3: Button */
     div.stButton > button {
         background-color: rgba(255,255,255,0.1) !important;
         color: white !important;
@@ -144,32 +93,33 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# Watchlist initialisieren
 if 'watchlist' not in st.session_state:
-    st.session_state.watchlist = load_watchlist()
+    st.session_state.watchlist = load_master_watchlist()
 
+# SIDEBAR FÜR BACKUP (Damit du die Liste für deine Secrets hast)
 with st.sidebar:
-    st.header("⚙️ Menü")
-    current_list = ",".join(st.session_state.watchlist)
-    st.text_area("Backup für Secrets:", value=current_list, height=100)
-    if st.button("Abmelden"):
-        st.session_state.clear()
+    st.header("📋 Master-Liste")
+    st.write("Kopiere diesen Text für deine Streamlit Secrets (START_STOCKS):")
+    current_list_str = ",".join(st.session_state.watchlist)
+    st.text_area("Copy-Paste:", value=current_list_str, height=100)
+    if st.button("🔄 Auf Master-Liste zurücksetzen"):
+        st.session_state.watchlist = load_master_watchlist()
         trigger_rerun()
 
-st.title("📈 RSI Tracker")
+st.title("📈 RSI Master Tracker")
 
-# SUCHE
-search = st.text_input("Suchen (Name, ISIN, Symbol)...")
+# --- SUCHE ---
+search = st.text_input("Aktie hinzufügen (Name, ISIN, Symbol)...")
 if len(search) > 1:
     res = yf.Search(search, max_results=5).quotes
     if res:
-        options = {f"{r.get('shortname')} ({r.get('symbol')}) - {r.get('exchDisp')}": r.get('symbol') for r in res}
+        options = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in res if r.get('shortname')}
         sel = st.selectbox("Wähle:", options.keys())
         if st.button("➕ Hinzufügen", use_container_width=True):
             sym = options[sel]
             if sym not in st.session_state.watchlist:
                 st.session_state.watchlist.append(sym)
-                add_to_db(sym)
-                st.cache_data.clear()
                 trigger_rerun()
 
 st.divider()
@@ -184,7 +134,11 @@ if st.session_state.watchlist:
             t_info = yf.Ticker(ticker)
             isin = t_info.isin if hasattr(t_info, 'isin') else "N/A"
             
-            df = all_data.xs(ticker, axis=1, level=1) if len(st.session_state.watchlist) > 1 else all_data
+            # Daten-Extraktion
+            if len(st.session_state.watchlist) > 1:
+                df = all_data.xs(ticker, axis=1, level=1)
+            else:
+                df = all_data
             
             if not df.empty:
                 rsi_val = calc_rsi(df['Close']).iloc[-1]
@@ -193,7 +147,7 @@ if st.session_state.watchlist:
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
                 txt = "Kaufzone" if rsi_val < 30 else "Verkaufzone" if rsi_val > 70 else "Neutral"
 
-                # HIER STARTET DAS MODUL (HTML)
+                # 3-STUFEN-MODUL
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <!-- STUFE 1: Header -->
@@ -209,7 +163,7 @@ if st.session_state.watchlist:
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # STUFE 2: Chart (Mitte)
+                # STUFE 2: Chart
                 fig = go.Figure(go.Scatter(x=df.index, y=calc_rsi(df['Close']), line=dict(color='white', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
@@ -218,13 +172,10 @@ if st.session_state.watchlist:
                                   xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                # STUFE 3: Button (Unten) - Wir stylen ihn so, dass er ins Modul passt
-                if st.button(f"🗑️ {ticker} löschen", key="del_"+ticker, use_container_width=True):
+                # STUFE 3: Button
+                if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
                     st.session_state.watchlist.remove(ticker)
-                    remove_from_db(ticker)
-                    st.cache_data.clear()
                     trigger_rerun()
                 
-                # MODUL ENDE
                 st.markdown("</div>", unsafe_allow_html=True)
         except: continue
