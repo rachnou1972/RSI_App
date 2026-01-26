@@ -12,25 +12,26 @@ def trigger_rerun():
     else: st.experimental_rerun()
 
 def load_from_secrets():
+    """Lädt die Master-Liste aus den Secrets"""
     try:
-        secret_string = st.secrets.get("START_STOCKS", "AAPL,TSLA")
+        secret_string = st.secrets.get("START_STOCKS", "TL0.TG,APC.TG")
         return [s.strip() for s in secret_string.split(",") if s.strip()]
     except:
-        return ["AAPL"]
+        return ["TL0.TG"]
 
 @st.cache_data(ttl=60)
 def fetch_live_data(tickers):
     if not tickers: return pd.DataFrame()
-    # Wir laden etwas mehr Daten (6 Monate), um Lücken zu füllen
+    # Download mit ffill um NaN zu vermeiden
     data = yf.download(tickers, period="6mo", interval="1d", progress=False)
-    # WICHTIG: Lücken füllen (Forward Fill), damit kein 'NaN' beim Preis entsteht
-    data = data.ffill()
-    return data
+    return data.ffill()
 
 @st.cache_data(ttl=3600)
-def get_company_info(ticker):
+def get_stock_details(ticker):
+    """Holt Firmenname und ISIN"""
     try:
         t = yf.Ticker(ticker)
+        # Für Gettex Ticker ist der Name oft in longName
         name = t.info.get('longName') or t.info.get('shortName') or ticker
         isin = t.isin if hasattr(t, 'isin') else "N/A"
         return name.upper(), isin
@@ -44,21 +45,27 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + (gain / loss)))
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI Live Tracker", layout="wide")
+st.set_page_config(page_title="RSI Gettex Tracker", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
+    /* Zentrierung auf Laptop (850px) */
     @media (min-width: 768px) { .main .block-container { max-width: 850px; margin: auto; } }
+    
     .stock-module { padding: 25px; border-radius: 20px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    
     .module-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; }
     .header-left { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; text-align: left; }
-    .header-main-text { font-size: 1.6em; font-weight: bold; line-height: 1.2; }
+    .header-main-text { font-size: 1.5em; font-weight: bold; line-height: 1.2; }
+    
     .rsi-bubble { padding: 10px 20px; border-radius: 12px; font-weight: bold; font-size: 1.1em; text-align: center; border: 2px solid; min-width: 130px; }
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.1); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.1); }
-    div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; border: none; height: 45px; }
+    
+    /* Buttons */
+    div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 45px; border: none; }
     .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.1) !important; margin-top: 10px; border: 1px solid rgba(255,255,255,0.2) !important; }
     .btn-del > div.stButton > button:hover { background-color: #ff4e4e !important; }
     input { color: #000 !important; font-weight: bold !important; }
@@ -70,27 +77,36 @@ if 'watchlist' not in st.session_state:
 
 # SIDEBAR
 with st.sidebar:
-    st.header("⚙️ Verwaltung")
+    st.header("📋 gettex Watchlist")
+    st.info("Tipp: Nutze '.TG' für Preise von finanzen.net zero (Gettex).")
     st.code(",".join(st.session_state.watchlist))
-    if st.button("🔄 Reset / Secrets laden"):
+    if st.button("🔄 Reset (aus Secrets)"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
         trigger_rerun()
 
-st.title("📈 RSI Tracker")
+st.title("📈 RSI Tracker (gettex / Euro)")
 
 # UPDATE BUTTON
-if st.button("🔄 Marktdaten jetzt aktualisieren", use_container_width=True):
+if st.button("🔄 Marktdaten aktualisieren", use_container_width=True):
     st.cache_data.clear()
     trigger_rerun()
 
 # SUCHE
-search = st.text_input("Aktie hinzufügen...", placeholder="Name oder Symbol...")
+search = st.text_input("Aktie suchen (ISIN, Name)...", placeholder="z.B. Apple oder US0378331005")
 if len(search) > 1:
-    res = yf.Search(search, max_results=5).quotes
+    res = yf.Search(search, max_results=8).quotes
     if res:
-        options = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in res if r.get('symbol')}
-        sel = st.selectbox("Ergebnis wählen:", options.keys())
+        # Filtert Ergebnisse, um Gettex (.TG) oder Deutsche Börsen hervorzuheben
+        options = {}
+        for r in res:
+            sym = r.get('symbol')
+            name = r.get('shortname', 'Info')
+            exch = r.get('exchDisp', 'Börse')
+            label = f"{name} ({sym}) - {exch}"
+            options[label] = sym
+            
+        sel = st.selectbox("Wähle das passende Symbol (bevorzugt .TG für Gettex):", options.keys())
         if st.button("➕ Hinzufügen"):
             sym = options[sel]
             if sym not in st.session_state.watchlist:
@@ -107,9 +123,9 @@ if st.session_state.watchlist:
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
-            co_name, isin = get_company_info(ticker)
+            co_name, isin = get_stock_details(ticker)
             
-            # Preis-Extraktion: Wir suchen den letzten Wert, der NICHT 'nan' ist
+            # Daten-Extraktion
             if len(st.session_state.watchlist) > 1:
                 col_data = all_data['Close'][ticker].dropna()
             else:
@@ -145,7 +161,7 @@ if st.session_state.watchlist:
                                   xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                # Löschen Button
+                # Löschen
                 st.markdown('<div class="btn-del">', unsafe_allow_html=True)
                 if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
                     st.session_state.watchlist.remove(ticker)
