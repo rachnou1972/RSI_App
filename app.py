@@ -12,12 +12,20 @@ def trigger_rerun():
     else: st.experimental_rerun()
 
 def load_from_secrets():
-    """Lädt die Master-Liste aus den Secrets (START_STOCKS)"""
     try:
         secret_string = st.secrets.get("START_STOCKS", "TL0.TG,APC.TG")
         return [s.strip() for s in secret_string.split(",") if s.strip()]
     except:
         return ["TL0.TG"]
+
+@st.cache_data(ttl=300)
+def get_euro_rate():
+    """Holt den aktuellen Wechselkurs USD -> EUR"""
+    try:
+        data = yf.download("USDEUR=X", period="1d", interval="1m", progress=False)
+        return data['Close'].iloc[-1]
+    except:
+        return 0.95
 
 @st.cache_data(ttl=60)
 def fetch_live_data(tickers):
@@ -27,14 +35,15 @@ def fetch_live_data(tickers):
 
 @st.cache_data(ttl=3600)
 def get_stock_details(ticker):
-    """Holt Firmenname und ISIN"""
+    """Holt Name, ISIN und Währung"""
     try:
         t = yf.Ticker(ticker)
         name = t.info.get('longName') or t.info.get('shortName') or ticker
+        currency = t.info.get('currency', 'EUR')
         isin = t.isin if hasattr(t, 'isin') else "N/A"
-        return name.upper(), isin
+        return name.upper(), currency, isin
     except:
-        return ticker.upper(), "N/A"
+        return ticker.upper(), 'EUR', 'N/A'
 
 def calc_rsi(series, period=14):
     delta = series.diff()
@@ -43,23 +52,20 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + (gain / loss)))
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI Gettex Tracker", layout="wide")
+st.set_page_config(page_title="RSI Tracker", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
     @media (min-width: 768px) { .main .block-container { max-width: 850px; margin: auto; } }
-    
     .stock-module { padding: 25px; border-radius: 20px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
     .module-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; }
     .header-left { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; text-align: left; }
     .header-main-text { font-size: 1.5em; font-weight: bold; line-height: 1.2; }
-    
     .rsi-bubble { padding: 10px 20px; border-radius: 12px; font-weight: bold; font-size: 1.1em; text-align: center; border: 2px solid; min-width: 140px; }
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.1); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.1); }
-    
     div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 45px; border: none; }
     .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.1) !important; margin-top: 15px; border: 1px solid rgba(255,255,255,0.2) !important; }
     .btn-del > div.stButton > button:hover { background-color: #ff4e4e !important; }
@@ -72,51 +78,53 @@ if 'watchlist' not in st.session_state:
 
 # SIDEBAR
 with st.sidebar:
-    st.header("📋 Gettex-Watchlist")
-    st.info("Suche filtert automatisch auf Gettex (.TG) für finanzen.net zero Kurse.")
+    st.header("⚙️ Verwaltung")
+    st.write("Aktuelle Liste für Secrets:")
     st.code(",".join(st.session_state.watchlist))
     if st.button("🔄 Reset / Secrets laden"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
         trigger_rerun()
 
-st.title("📈 RSI Tracker (Nur Gettex / Euro)")
+st.title("📈 RSI Tracker (Euro Preise)")
 
 # UPDATE BUTTON
-if st.button("🔄 Marktdaten aktualisieren", use_container_width=True):
+if st.button("🔄 Marktdaten jetzt aktualisieren", use_container_width=True):
     st.cache_data.clear()
     trigger_rerun()
 
-# --- SUCHE (Gefiltert auf Gettex) ---
-search = st.text_input("Aktie auf Gettex suchen (Name oder ISIN)...", placeholder="z.B. Tesla, Apple, Allianz...")
+# --- SUCHE (Offen für alle Börsen) ---
+search = st.text_input("Aktie suchen (Name, ISIN oder Symbol)...", placeholder="z.B. Tesla, Apple, Allianz...")
 if len(search) > 1:
-    res = yf.Search(search, max_results=20).quotes
+    res = yf.Search(search, max_results=10).quotes
     if res:
-        # FILTER: Nur Ticker, die auf .TG enden (Gettex)
-        gettex_options = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') 
-                          for r in res if str(r.get('symbol')).endswith('.TG')}
-        
-        if gettex_options:
-            sel = st.selectbox("Gefundene Gettex-Aktien:", gettex_options.keys())
-            if st.button("➕ Zur Liste hinzufügen"):
-                sym = gettex_options[sel]
-                if sym not in st.session_state.watchlist:
-                    st.session_state.watchlist.append(sym)
-                    st.cache_data.clear()
-                    trigger_rerun()
-        else:
-            st.warning("Keine Gettex-Kurse (.TG) für diesen Suchbegriff gefunden. Probiere es mit der ISIN.")
+        options = {}
+        for r in res:
+            sym = r.get('symbol')
+            name = r.get('shortname', 'Info')
+            exch = r.get('exchDisp', 'Börse')
+            label = f"{name} ({sym}) - Börse: {exch}"
+            options[label] = sym
+            
+        sel = st.selectbox("Wähle das passende Symbol:", options.keys())
+        if st.button("➕ Hinzufügen"):
+            sym = options[sel]
+            if sym not in st.session_state.watchlist:
+                st.session_state.watchlist.append(sym)
+                st.cache_data.clear()
+                trigger_rerun()
 
 st.divider()
 
-# --- ANZEIGE DER MODULE ---
+# --- ANZEIGE ---
 if st.session_state.watchlist:
     all_data = fetch_live_data(st.session_state.watchlist)
+    usd_to_eur = get_euro_rate()
     
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
-            co_name, isin = get_stock_details(ticker)
+            co_name, currency, isin = get_stock_details(ticker)
             
             # Daten-Extraktion
             if len(st.session_state.watchlist) > 1:
@@ -125,7 +133,10 @@ if st.session_state.watchlist:
                 col_data = all_data['Close'].dropna()
             
             if not col_data.empty:
-                current_price = col_data.iloc[-1]
+                raw_price = col_data.iloc[-1]
+                # Umrechnung falls nicht in Euro (z.B. US-Aktie gewählt)
+                current_price = raw_price * usd_to_eur if currency == 'USD' else raw_price
+                
                 rsi_series = calc_rsi(col_data)
                 rsi_val = rsi_series.iloc[-1]
                 
