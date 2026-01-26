@@ -2,7 +2,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-import time
 
 # --- KONFIGURATION ---
 COLORS = ["#1e3b4f", "#2b306b", "#1e4f3e", "#3e1e4f", "#4f3a1e"]
@@ -13,23 +12,17 @@ def trigger_rerun():
     else: st.experimental_rerun()
 
 def load_from_secrets():
+    """Lädt die Master-Liste. Nutze .TG für Gettex (Finanzen Zero)"""
     try:
         secret_string = st.secrets.get("START_STOCKS", "TL0.TG,APC.TG")
         return [s.strip() for s in secret_string.split(",") if s.strip()]
     except:
         return ["TL0.TG"]
 
-@st.cache_data(ttl=300)
-def get_euro_rate():
-    try:
-        data = yf.download("USDEUR=X", period="1d", interval="1m", progress=False)
-        return data['Close'].iloc[-1]
-    except:
-        return 0.95
-
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30) # Sehr kurzer Cache für fast Live-Daten
 def fetch_live_data(tickers):
     if not tickers: return pd.DataFrame()
+    # Wir laden die Daten. Yahoo liefert .TG Symbole direkt in Euro.
     data = yf.download(tickers, period="6mo", interval="1d", progress=False)
     return data.ffill()
 
@@ -38,10 +31,9 @@ def get_stock_details(ticker):
     try:
         t = yf.Ticker(ticker)
         name = t.info.get('longName') or t.info.get('shortName') or ticker
-        currency = t.info.get('currency', 'EUR')
-        return name.upper(), currency
+        return name.upper()
     except:
-        return ticker.upper(), 'EUR'
+        return ticker.upper()
 
 def calc_rsi(series, period=14):
     delta = series.diff()
@@ -50,7 +42,7 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + (gain / loss)))
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI Tracker", layout="wide")
+st.set_page_config(page_title="RSI Gettex Tracker", layout="wide")
 
 st.markdown("""
     <style>
@@ -62,9 +54,8 @@ st.markdown("""
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.1); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.1); }
-    /* Button Styles */
     div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 50px; border: none; }
-    .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.1) !important; margin-top: 15px; height: 40px; }
+    .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.1) !important; margin-top: 15px; }
     input { color: #000 !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -74,71 +65,82 @@ if 'watchlist' not in st.session_state:
 
 # SIDEBAR
 with st.sidebar:
-    st.header("⚙️ Verwaltung")
+    st.header("⚙️ gettex Monitor")
+    st.info("Diese App zeigt Kurse der Börse gettex (Euro), wie in deiner finanzen.net zero App.")
     if st.button("🔄 Reset / Secrets laden"):
-        with st.spinner("Setze Liste zurück..."):
-            st.session_state.watchlist = load_from_secrets()
-            st.cache_data.clear()
-            trigger_rerun()
-
-st.title("📈 RSI Tracker")
-
-# UPDATE BUTTON MIT FEEDBACK
-if st.button("🔄 Marktdaten jetzt aktualisieren", use_container_width=True):
-    with st.spinner("Aktualisiere alle Kurse..."):
+        st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
-        time.sleep(0.5) # Kurze Pause für visuelles Feedback
         trigger_rerun()
 
-# SUCHE MIT FEEDBACK
-search = st.text_input("Aktie suchen (Name, ISIN oder Symbol)...", placeholder="z.B. Tesla, Apple...")
+st.title("📈 RSI Tracker (gettex Preise)")
+
+# UPDATE BUTTON
+if st.button("🔄 Marktdaten aktualisieren", use_container_width=True):
+    with st.spinner("Lade gettex-Kurse..."):
+        st.cache_data.clear()
+        trigger_rerun()
+
+# SUCHE (Optimiert auf deutsche Börsenplätze)
+search = st.text_input("Aktie suchen (z.B. Tesla, Apple, Allianz)...", placeholder="Tippe hier...")
 if len(search) > 1:
-    with st.spinner("Suche passende Aktien..."):
-        res = yf.Search(search, max_results=10).quotes
+    with st.spinner("Suche auf deutschen Handelsplätzen..."):
+        res = yf.Search(search, max_results=15).quotes
     
     if res:
-        options = {f"{r.get('shortname')} ({r.get('symbol')}) - {r.get('exchDisp')}": r.get('symbol') for r in res}
-        sel = st.selectbox("Ergebnis wählen:", options.keys())
+        # Wir filtern Ergebnisse: Gettex (.TG) zuerst, dann Frankfurt (.F), dann Rest
+        options = {}
+        for r in res:
+            sym = str(r.get('symbol'))
+            name = r.get('shortname', 'Info')
+            exch = r.get('exchDisp', 'Börse')
+            
+            # Markiere Gettex-Symbole besonders
+            if sym.endswith('.TG'):
+                label = f"⭐ {name} (GETTEX: {sym}) - EMPFOHLEN"
+                options[label] = sym
+            elif sym.endswith('.F') or sym.endswith('.DE'):
+                label = f"📍 {name} ({exch}: {sym})"
+                options[label] = sym
+            else:
+                label = f"⚪ {name} ({exch}: {sym})"
+                options[label] = sym
         
-        if st.button("➕ Zur Liste hinzufügen"):
-            with st.spinner("Füge Aktie hinzu..."):
-                sym = options[sel]
-                if sym not in st.session_state.watchlist:
-                    st.session_state.watchlist.append(sym)
-                    st.cache_data.clear()
-                    trigger_rerun()
+        sel = st.selectbox("Wähle die Aktie (Nutze ⭐ für finanzen.net zero Preise):", options.keys())
+        if st.button("➕ Hinzufügen"):
+            sym = options[sel]
+            if sym not in st.session_state.watchlist:
+                st.session_state.watchlist.append(sym)
+                st.cache_data.clear()
+                trigger_rerun()
 
 st.divider()
 
-# ANZEIGE DER MODULE
+# ANZEIGE
 if st.session_state.watchlist:
-    with st.spinner("Lade Live-Daten vom Markt..."):
+    with st.spinner("Hole Live-Kurse von gettex..."):
         all_data = fetch_live_data(st.session_state.watchlist)
-        usd_to_eur = get_euro_rate()
     
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
-            co_name, currency = get_stock_details(ticker)
+            co_name = get_stock_details(ticker)
             
-            # Datenextraktion
+            # Datenextraktion (Handling für Einzel/Mehrfach-Ticker)
             df = all_data.xs(ticker, axis=1, level=1) if len(st.session_state.watchlist) > 1 else all_data
             df = df.dropna()
             
             if not df.empty:
-                raw_price = df['Close'].iloc[-1]
-                price_in_eur = raw_price * usd_to_eur if currency == 'USD' else raw_price
-                
+                current_price = df['Close'].iloc[-1]
                 rsi_series = calc_rsi(df['Close'])
                 rsi_val = rsi_series.iloc[-1]
                 
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
-                txt = "KAUFEN" if rsi_val < 30 else "VERKAUFEN" if rsi_val > 70 else "NEUTRAL"
+                txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
 
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <div class="header-main-text">{co_name}: {ticker} {price_in_eur:.2f} €</div>
+                        <div class="header-main-text">{co_name}: {ticker} {current_price:.2f} €</div>
                         <div class="rsi-bubble {cl}">RSI: {rsi_val:.2f}<br>{txt}</div>
                     </div>
                 """, unsafe_allow_html=True)
