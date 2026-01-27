@@ -16,7 +16,6 @@ def trigger_rerun():
     else: st.experimental_rerun()
 
 def load_from_secrets():
-    """Lädt die Master-Liste bei jedem Start aus den Secrets (START_STOCKS)"""
     try:
         secret_string = st.secrets.get("START_STOCKS", "TL0.TG,AAPL")
         return [s.strip() for s in secret_string.split(",") if s.strip()]
@@ -26,16 +25,18 @@ def load_from_secrets():
 @st.cache_data(ttl=25)
 def fetch_stock_data(tickers):
     if not tickers: return pd.DataFrame()
-    # Wir laden 1 Monat, um den 5-Tage RSI stabil zu berechnen
+    # Wir laden 1 Monat Daten für einen stabilen RSI
     data = yf.download(tickers, period="1mo", interval="1d", progress=False)
     return data.ffill()
 
 @st.cache_data(ttl=3600)
 def get_stock_meta(ticker):
+    """Holt Firmenname und Original-Währungssymbol"""
     try:
         t = yf.Ticker(ticker)
         name = t.info.get('longName') or ticker
         curr_code = t.info.get('currency', '')
+        # Währungs-Mapping
         mapping = {"USD": "$", "EUR": "€", "GBp": "p", "CHF": "Fr"}
         symbol = mapping.get(curr_code, curr_code)
         return name.upper(), symbol
@@ -49,91 +50,45 @@ def calc_rsi(series, period=5):
     return 100 - (100 / (1 + (gain / loss)))
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI 5D Tracker", layout="wide")
+st.set_page_config(page_title="RSI Tracker", layout="wide")
 
-# CSS: 60% BREITE, ZENTRIERUNG, BUTTONS & MODULE
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
+    @media (min-width: 768px) { .main .block-container { max-width: 850px; margin: auto; } }
     
-    /* Desktop: Exakt 60% Breite und mittig */
-    @media (min-width: 1024px) {
-        .main .block-container {
-            max-width: 60% !important;
-            margin: auto !important;
-            padding-left: 2rem !important;
-            padding-right: 2rem !important;
-        }
-    }
-
-    /* Das 3-Stufen-Modul */
-    .stock-module {
-        padding: 20px;
-        border-radius: 20px;
-        margin-bottom: 25px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-    }
-
-    .header-main-text { font-size: 1.3em; font-weight: bold; line-height: 1.3; }
+    .stock-module { padding: 25px; border-radius: 20px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .header-main-text { font-size: 1.4em; font-weight: bold; }
     
-    .rsi-bubble {
-        padding: 8px 15px;
-        border-radius: 12px;
-        font-weight: bold;
-        text-align: center;
-        border: 2px solid;
-        min-width: 120px;
-        font-size: 0.95em;
-    }
-    
+    .rsi-bubble { padding: 10px 20px; border-radius: 12px; font-weight: bold; text-align: center; border: 2px solid; min-width: 140px; }
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.1); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.1); }
-
-    /* Button Design (Immer sichtbar) */
-    div.stButton > button {
-        background-color: #4e8cff !important;
-        color: white !important;
-        border-radius: 12px !important;
-        width: 100% !important;
-        font-weight: bold !important;
-        height: 45px !important;
-        border: none !important;
-        display: block !important;
-    }
     
-    .btn-del > div.stButton > button {
-        background-color: rgba(255,255,255,0.1) !important;
-        border: 1px solid rgba(255,255,255,0.2) !important;
-        margin-top: 10px;
-    }
-    .btn-del > div.stButton > button:hover { background-color: #ff4e4e !important; }
-
+    div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 45px; border: none; }
+    .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.1) !important; margin-top: 15px; }
     input { color: #000 !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# Initialisierung
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
-# --- SIDEBAR (ZURÜCKGEBRACHT) ---
+# --- SIDEBAR FÜR BACKUP ---
 with st.sidebar:
-    st.header("⚙️ Einstellungen")
-    st.write("Deine Liste für die Secrets:")
+    st.header("⚙️ Verwaltung")
+    st.write("Aktuelle Liste für deine Secrets:")
     current_list_str = ",".join(st.session_state.watchlist)
     st.text_area("Kopieren & in START_STOCKS speichern:", value=current_list_str, height=150)
-    
-    if st.button("🔄 Liste aus Secrets neu laden"):
+    if st.button("🔄 Reset aus Secrets"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
         trigger_rerun()
-    st.info("Die App aktualisiert die Preise alle 30 Sekunden automatisch.")
 
-st.title("📈 RSI Tracker (5-Tage)")
+st.title("📈 RSI Tracker")
 
 # SUCHE
-search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple...")
+search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple, US0378331005")
 if search:
     try:
         s_res = yf.Search(search, max_results=5).quotes
@@ -151,58 +106,46 @@ if search:
 
 st.divider()
 
-# --- ANZEIGE DER MODULE ---
+# ANZEIGE DER MODULE
 if st.session_state.watchlist:
-    all_data = fetch_stock_data(st.session_state.watchlist)
+    with st.spinner("Lade Marktdaten..."):
+        all_data = fetch_stock_data(st.session_state.watchlist)
     
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
-            co_name, curr_sym = get_stock_meta(ticker)
+            co_name, currency_symbol = get_stock_meta(ticker)
             
             # Preis- und RSI-Extraktion
-            df_full = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
+            df = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
             
-            if not df_full.empty:
-                rsi_series = calc_rsi(df_full, period=5)
-                df_recent = df_full.tail(5)
-                rsi_recent = rsi_series.tail(5)
+            if not df.empty:
+                current_price = df.iloc[-1]
+                rsi_series = calc_rsi(df, period=5)
+                rsi_val = rsi_series.iloc[-1]
                 
-                curr_p = df_recent.iloc[-1]
-                rsi_v = rsi_recent.iloc[-1]
-                
-                cl = "buy" if rsi_v < 30 else "sell" if rsi_v > 70 else "neutral"
-                txt = "KAUFZONE" if rsi_v < 30 else "VERKAUFZONE" if rsi_v > 70 else "NEUTRAL"
+                cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
+                txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
 
-                # DAS MODUL
+                # 3-STUFEN-MODUL
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <div class="header-main-text">{co_name}: {ticker}<br>{curr_p:.2f} {curr_sym}</div>
-                        <div class="rsi-bubble {cl}">RSI (5): {rsi_v:.2f}<br>{txt}</div>
+                        <div class="header-main-text">{co_name}: {ticker}<br>{current_price:.2f} {currency_symbol}</div>
+                        <div class="rsi-bubble {cl}">RSI: {rsi_val:.2f}<br>{txt}</div>
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # CHART: 5 Tage Verlauf
-                fig = go.Figure(go.Scatter(
-                    x=rsi_recent.index, 
-                    y=rsi_recent, 
-                    mode='lines+markers',
-                    line=dict(color='white', width=4),
-                    marker=dict(size=10, bordercolor="white", borderwidth=1)
-                ))
+                # Chart
+                fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='white', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
-                fig.update_layout(
-                    height=200, margin=dict(l=0,r=0,t=10,b=10), 
-                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-                    font=dict(color="white"),
-                    xaxis=dict(showgrid=False, tickformat="%d.%m"), 
-                    yaxis=dict(range=[0, 100], showgrid=False)
-                )
+                fig.update_layout(height=180, margin=dict(l=0,r=0,t=10,b=10), paper_bgcolor='rgba(0,0,0,0)', 
+                                  plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"),
+                                  xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                # Löschen Button (Innerhalb des Moduls)
+                # Löschen
                 st.markdown('<div class="btn-del">', unsafe_allow_html=True)
                 if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
                     st.session_state.watchlist.remove(ticker)
