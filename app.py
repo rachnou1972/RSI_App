@@ -141,4 +141,12 @@ if st.session_state.watchlist:
                     xaxis=dict(showgrid=False, tickformat="%d.%b"), 
                     yaxis=dict(range=[0, 100], showgrid=False)
                 )
-                st.plotly_c
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+                st.markdown('<div class="btn-del">', unsafe_allow_html=True)
+                if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
+                    st.session_state.watchlist.remove(ticker)
+                    trigger_rerun()
+                st.markdown('</div></div>', unsafe_allow_html=True)
+        except:
+            continue
