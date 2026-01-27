@@ -25,17 +25,16 @@ def load_from_secrets():
 @st.cache_data(ttl=25)
 def fetch_stock_data(tickers):
     if not tickers: return pd.DataFrame()
-    data = yf.download(tickers, period="3mo", interval="1d", progress=False)
+    # Wir laden 1 Monat Daten, um den RSI stabil berechnen zu können
+    data = yf.download(tickers, period="1mo", interval="1d", progress=False)
     return data.ffill()
 
 @st.cache_data(ttl=3600)
 def get_stock_meta(ticker):
-    """Holt Firmenname und Original-Währungssymbol"""
     try:
         t = yf.Ticker(ticker)
         name = t.info.get('longName') or ticker
         curr_code = t.info.get('currency', '')
-        # Währungs-Mapping
         mapping = {"USD": "$", "EUR": "€", "GBp": "p", "CHF": "Fr"}
         symbol = mapping.get(curr_code, curr_code)
         return name.upper(), symbol
@@ -70,19 +69,10 @@ st.markdown("""
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
-# SIDEBAR
-with st.sidebar:
-    st.header("📋 Watchlist")
-    st.code(",".join(st.session_state.watchlist))
-    if st.button("🔄 Reset aus Secrets"):
-        st.session_state.watchlist = load_from_secrets()
-        st.cache_data.clear()
-        trigger_rerun()
-
-st.title("📈 RSI Tracker (5-Tage)")
+st.title("📈 RSI 5-Tage Tracker")
 
 # SUCHE
-search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple, US0378331005")
+search = st.text_input("Aktie hinzufügen...", placeholder="Name oder Symbol...")
 if search:
     try:
         s_res = yf.Search(search, max_results=5).quotes
@@ -109,13 +99,19 @@ if st.session_state.watchlist:
             mod_color = COLORS[i % len(COLORS)]
             co_name, currency_symbol = get_stock_meta(ticker)
             
-            # Preis- und RSI-Extraktion
-            df = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
+            # Daten extrahieren
+            df_full = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
             
-            if not df.empty:
-                current_price = df.iloc[-1]
-                rsi_series = calc_rsi(df, period=5)
-                rsi_val = rsi_series.iloc[-1]
+            if not df_full.empty:
+                # RSI berechnen (auf Basis der vollen Daten für Stabilität)
+                rsi_series = calc_rsi(df_full, period=5)
+                
+                # Nur die letzten 5 Tage für den Chart und die Anzeige nehmen
+                df_recent = df_full.tail(5)
+                rsi_recent = rsi_series.tail(5)
+                
+                current_price = df_recent.iloc[-1]
+                rsi_val = rsi_recent.iloc[-1]
                 
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
                 txt = "KAUFEN" if rsi_val < 30 else "VERKAUFEN" if rsi_val > 70 else "NEUTRAL"
@@ -128,18 +124,21 @@ if st.session_state.watchlist:
                     </div>
                 """, unsafe_allow_html=True)
                 
-                fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='white', width=3)))
+                # CHART: Nur 5 Datenpunkte
+                fig = go.Figure(go.Scatter(
+                    x=rsi_recent.index, 
+                    y=rsi_recent, 
+                    mode='lines+markers', # Punkte hinzufügen, damit man die 5 Tage besser sieht
+                    line=dict(color='white', width=4),
+                    marker=dict(size=8)
+                ))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
-                fig.update_layout(height=180, margin=dict(l=0,r=0,t=10,b=10), paper_bgcolor='rgba(0,0,0,0)', 
-                                  plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"),
-                                  xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
-                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-                st.markdown('<div class="btn-del">', unsafe_allow_html=True)
-                if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
-                    st.session_state.watchlist.remove(ticker)
-                    trigger_rerun()
-                st.markdown('</div></div>', unsafe_allow_html=True)
-        except:
-            continue
+                fig.update_layout(
+                    height=200, margin=dict(l=0,r=0,t=10,b=10), 
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+                    font=dict(color="white"),
+                    xaxis=dict(showgrid=False, tickformat="%d.%b"), 
+                    yaxis=dict(range=[0, 100], showgrid=False)
+                )
+                st.plotly_c
