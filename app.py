@@ -16,6 +16,7 @@ def trigger_rerun():
     else: st.experimental_rerun()
 
 def load_from_secrets():
+    """Lädt die Master-Liste aus den Streamlit Secrets (START_STOCKS)"""
     try:
         secret_string = st.secrets.get("START_STOCKS", "TL0.TG,AAPL")
         return [s.strip() for s in secret_string.split(",") if s.strip()]
@@ -29,6 +30,7 @@ def fetch_stock_data(tickers):
     return data.ffill()
 
 def get_currency_and_name(ticker):
+    """Erkennt Währung anhand der Börse und holt den Namen"""
     euro_exchanges = [".TG", ".DE", ".F", ".BE", ".MU", ".DU", ".HA", ".ZE"]
     currency = "€" if any(ticker.upper().endswith(ext) for ext in euro_exchanges) else "$"
     try:
@@ -71,7 +73,7 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.1);
     }
 
-    /* Header: Alles in einer Zeile */
+    /* Header Layout */
     .module-header {
         display: flex;
         justify-content: space-between;
@@ -102,7 +104,7 @@ st.markdown("""
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.1); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.1); }
     
-    /* Buttons einpassen */
+    /* Button Design */
     div.stButton > button {
         background-color: rgba(255,255,255,0.1) !important;
         color: white !important;
@@ -118,11 +120,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Start-Liste laden
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
-# SIDEBAR BACKUP
 with st.sidebar:
     st.header("⚙️ Verwaltung")
     current_list_str = ",".join(st.session_state.watchlist)
@@ -134,7 +134,6 @@ with st.sidebar:
 
 st.title("📈 RSI Tracker")
 
-# SUCHE
 search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple...")
 if search:
     try:
@@ -152,15 +151,12 @@ if search:
 
 st.divider()
 
-# ANZEIGE DER MODULE
 if st.session_state.watchlist:
     all_data = fetch_stock_data(st.session_state.watchlist)
-    
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
             co_name, currency = get_currency_and_name(ticker)
-            
             df_full = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
             
             if not df_full.empty:
@@ -172,10 +168,7 @@ if st.session_state.watchlist:
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
                 txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
 
-                # HIER STARTET DAS MODUL-GEFÄSS
                 st.markdown(f'<div class="stock-container" style="background-color: {mod_color};">', unsafe_allow_html=True)
-                
-                # STUFE 1: Header
                 st.markdown(f"""
                 <div class="module-header">
                     <div class="header-left">
@@ -186,7 +179,6 @@ if st.session_state.watchlist:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # STUFE 2: Chart (Mitte)
                 fig = go.Figure(go.Scatter(
                     x=rsi_recent.index, y=rsi_recent, mode='lines+markers', 
                     line=dict(color='white', width=4), marker=dict(size=10)
@@ -198,11 +190,8 @@ if st.session_state.watchlist:
                                   xaxis=dict(showgrid=False, tickformat="%d.%m"), yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                # STUFE 3: Button (Unten)
                 if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
                     st.session_state.watchlist.remove(ticker)
                     trigger_rerun()
-                
-                # MODUL-GEFÄSS ENDE
                 st.markdown('</div>', unsafe_allow_html=True)
         except: continue
