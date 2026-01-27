@@ -16,52 +16,31 @@ def trigger_rerun():
     else: st.experimental_rerun()
 
 def load_from_secrets():
+    """Lädt die Master-Liste aus den Streamlit Secrets (START_STOCKS)"""
     try:
-        secret_string = st.secrets.get("START_STOCKS", "TSLA,AAPL,MSFT")
+        # Erwartet in den Secrets: START_STOCKS = "TSLA,AAPL,MSFT"
+        secret_string = st.secrets.get("START_STOCKS", "TSLA,AAPL")
         return [s.strip() for s in secret_string.split(",") if s.strip()]
     except:
+        # Falls keine Secrets gefunden werden, nimm TSLA als Notfall-Standard
         return ["TSLA"]
 
-@st.cache_data(ttl=20)
-def get_live_eur_rate():
-    """Holt den aktuellen Wechselkurs USD -> EUR für Echtzeit-Umrechnung"""
-    try:
-        data = yf.download("USDEUR=X", period="1d", interval="1m", progress=False)
-        return data['Close'].iloc[-1]
-    except:
-        return 0.95
-
-@st.cache_data(ttl=20)
-def fetch_stock_data(ticker_symbol):
-    """Holt den absolut neuesten Preis und die Historie"""
-    try:
-        t = yf.Ticker(ticker_symbol)
-        # fast_info liefert bei US-Werten oft Echtzeit-Daten
-        live_price = t.fast_info.get('lastPrice')
-        
-        df = yf.download(ticker_symbol, period="1mo", interval="1d", progress=False)
-        if df.empty: return None, None
-        
-        df = df.ffill()
-        # Den live_price als aktuellsten Datenpunkt in den Chart einbauen
-        if live_price:
-            df.loc[pd.Timestamp.now()] = df.iloc[-1] # Zeile kopieren
-            df.iat[-1, df.columns.get_loc('Close')] = live_price # Preis überschreiben
-            
-        return live_price, df
-    except:
-        return None, None
+@st.cache_data(ttl=25)
+def fetch_stock_data(tickers):
+    if not tickers: return pd.DataFrame()
+    # Wir laden 1 Monat Daten für die RSI Berechnung
+    data = yf.download(tickers, period="1mo", interval="1d", progress=False)
+    return data.ffill()
 
 def get_currency_and_name(ticker):
+    """Erkennt Währung anhand der Börse und holt den Namen"""
     euro_exchanges = [".TG", ".DE", ".F", ".BE", ".MU", ".DU", ".HA", ".ZE"]
-    is_euro_ticker = any(ticker.upper().endswith(ext) for ext in euro_exchanges)
+    currency = "€" if any(ticker.upper().endswith(ext) for ext in euro_exchanges) else "$"
     try:
         t = yf.Ticker(ticker)
         name = t.info.get('longName') or t.info.get('shortName') or ticker
-        currency = "EUR" if is_euro_ticker or t.info.get('currency') == "EUR" else "USD"
     except:
         name = ticker
-        currency = "EUR" if is_euro_ticker else "USD"
     return name.upper(), currency
 
 def calc_rsi(series, period=5):
@@ -71,48 +50,89 @@ def calc_rsi(series, period=5):
     return 100 - (100 / (1 + (gain / loss)))
 
 # --- UI SETUP ---
-st.set_page_config(page_title="RSI Tracker Live", layout="wide")
+st.set_page_config(page_title="RSI Tracker", layout="wide")
 
+# CSS FÜR ZENTRIERUNG (700px), MODULE UND BUTTONS
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
+    
+    /* Laptop-Zentrierung: 700px breit für viel schwarzen Rand */
     @media (min-width: 1024px) {
         .main .block-container {
             max-width: 700px !important;
-            margin: auto !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
             padding-left: 1rem !important;
             padding-right: 1rem !important;
         }
     }
-    .stock-module { padding: 20px; border-radius: 20px; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
-    .module-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 10px; }
-    .header-text-group { display: flex; align-items: baseline; gap: 8px; font-size: 1.1em; font-weight: bold; }
+
+    /* Das 3-Stufen-Modul */
+    .stock-module {
+        padding: 20px;
+        border-radius: 20px;
+        margin-bottom: 25px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+
+    /* Header: Name, Ticker, Preis in einer Zeile */
+    .module-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        gap: 10px;
+    }
+    
+    .header-text-group {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 1.1em;
+        font-weight: bold;
+    }
+
     .header-price { color: #00ff88; white-space: nowrap; }
-    .rsi-bubble { padding: 8px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 2px solid; min-width: 100px; font-size: 0.9em; }
+
+    .rsi-bubble {
+        padding: 8px 15px;
+        border-radius: 12px;
+        font-weight: bold;
+        text-align: center;
+        border: 2px solid;
+        min-width: 100px;
+        font-size: 0.9em;
+    }
+    
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.1); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.1); }
+    
     div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 42px; border: none; }
     .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.08) !important; margin-top: 10px; border: 1px solid rgba(255,255,255,0.2) !important; }
+    
     input { color: #000 !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
 
+# Initialisierung beim Start (Laden aus Secrets)
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
+# --- SIDEBAR (BACKUP BEREICH) ---
 with st.sidebar:
     st.header("⚙️ Verwaltung")
     current_list_str = ",".join(st.session_state.watchlist)
-    st.text_area("Master-Liste:", value=current_list_str, height=120)
+    st.text_area("Master-Liste für Secrets:", value=current_list_str, height=120)
     if st.button("🔄 Reset aus Secrets"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
         trigger_rerun()
 
-st.title("📈 RSI Live-Tracker")
-st.caption("US-Aktien (TSLA, AAPL etc.) werden in Echtzeit in Euro umgerechnet.")
+st.title("📈 RSI Tracker")
 
+# SUCHE
 search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple...")
 if search:
     try:
@@ -126,43 +146,54 @@ if search:
                     st.session_state.watchlist.append(sym)
                     st.cache_data.clear()
                     trigger_rerun()
-    except: st.error("Suche aktuell nicht verfügbar.")
+    except:
+        st.error("Suche aktuell nicht verfügbar.")
 
 st.divider()
 
+# --- ANZEIGE DER MODULE ---
 if st.session_state.watchlist:
-    eur_rate = get_live_eur_rate()
+    all_data = fetch_stock_data(st.session_state.watchlist)
+    
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
             co_name, currency = get_currency_and_name(ticker)
-            price, df = fetch_stock_data(ticker)
             
-            if price and not df.empty:
-                # ECHTZEIT-UMRECHNUNG: Wenn US-Preis, rechne in Euro um
-                display_price = price * eur_rate if currency == "USD" else price
+            # Preis-Extraktion
+            df_full = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
+            
+            if not df_full.empty:
+                rsi_series = calc_rsi(df_full, period=5)
                 
-                rsi_series = calc_rsi(df['Close'], period=5)
+                # Nur die letzten 5 Tage für Chart
+                current_price = df_full.iloc[-1]
                 rsi_recent = rsi_series.tail(5)
                 rsi_val = rsi_recent.iloc[-1]
                 
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
                 txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
-                
+
+                # DAS MODUL
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <div class="module-header">
                         <div class="header-text-group">
-                            <span>{co_name}:</span><span>{ticker}</span>
-                            <span class="header-price">{display_price:.2f} €</span>
+                            <span>{co_name}:</span>
+                            <span>{ticker}</span>
+                            <span class="header-price">{current_price:.2f} {currency}</span>
                         </div>
                         <div class="rsi-bubble {cl}">RSI (5): {rsi_val:.2f}<br>{txt}</div>
                     </div>
                 """, unsafe_allow_html=True)
                 
+                # Chart (5 Handelstage mit Punkten)
                 fig = go.Figure(go.Scatter(
-                    x=rsi_recent.index, y=rsi_recent, 
-                    mode='lines+markers', line=dict(color='white', width=4), marker=dict(size=10)
+                    x=rsi_recent.index, 
+                    y=rsi_recent, 
+                    mode='lines+markers',
+                    line=dict(color='white', width=4),
+                    marker=dict(size=10)
                 ))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
@@ -171,10 +202,12 @@ if st.session_state.watchlist:
                                   xaxis=dict(showgrid=False, tickformat="%d.%m"), 
                                   yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-                
+
+                # Löschen
                 st.markdown('<div class="btn-del">', unsafe_allow_html=True)
                 if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
                     st.session_state.watchlist.remove(ticker)
                     trigger_rerun()
                 st.markdown('</div></div>', unsafe_allow_html=True)
-        except: continue
+        except:
+            continue
