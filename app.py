@@ -30,28 +30,35 @@ def fetch_stock_data(tickers):
 
 @st.cache_data(ttl=3600)
 def get_stock_meta(ticker):
-    """Holt Namen und erkennt die korrekte Währung (USD -> $, EUR -> €)"""
+    """Holt Namen und bestimmt das Währungssymbol"""
     try:
         t = yf.Ticker(ticker)
-        info = t.info
-        name = info.get('longName') or info.get('shortName') or ticker
-        currency_code = info.get('currency', '')
+        # Name holen
+        name = t.info.get('longName') or t.info.get('shortName') or ticker
         
-        # Währungs-Zuordnung
-        if currency_code == "USD":
-            currency_symbol = "$"
-        elif currency_code == "EUR":
-            currency_symbol = "€"
-        else:
-            # Fallback basierend auf dem Ticker-Kürzel
-            if any(ext in ticker for ext in [".TG", ".DE", ".F", ".BE", ".MU"]):
-                currency_symbol = "€"
+        # Währung bestimmen
+        currency = t.info.get('currency', 'USD')
+        
+        # Mapping von Kürzel zu Symbol
+        mapping = {
+            "USD": "$",
+            "EUR": "€",
+            "GBp": "p",
+            "GBP": "£",
+            "CHF": "Fr."
+        }
+        
+        # Falls Yahoo keine Währung liefert, anhand der Börse schätzen
+        symbol = mapping.get(currency, "")
+        if not symbol:
+            if any(ticker.endswith(ext) for ext in [".TG", ".DE", ".F", ".BE", ".MU"]):
+                symbol = "€"
             else:
-                currency_symbol = "$"
-        
-        return name.upper(), currency_symbol
+                symbol = "$"
+                
+        return name.upper(), symbol
     except:
-        return ticker.upper(), "€"
+        return ticker.upper(), ""
 
 def calc_rsi(series, period=5):
     delta = series.diff()
@@ -62,12 +69,12 @@ def calc_rsi(series, period=5):
 # --- UI SETUP ---
 st.set_page_config(page_title="RSI Tracker", layout="wide")
 
-# CSS: STRENGERE ZENTRIERUNG (700px) UND FLEX-HEADER
+# CSS: STRENGE ZENTRIERUNG (700px) UND FLEX-HEADER
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
     
-    /* Laptop-Zentrierung: 700px breit für viel schwarzen Rand links/rechts */
+    /* Desktop-Zentrierung: 700px für viel schwarzen Rand */
     @media (min-width: 1024px) {
         .main .block-container {
             max-width: 700px !important;
@@ -93,6 +100,7 @@ st.markdown("""
         align-items: center;
         margin-bottom: 15px;
         gap: 10px;
+        flex-wrap: nowrap; /* Verhindert Umbruch im Header */
     }
     
     .header-text-group {
@@ -101,7 +109,13 @@ st.markdown("""
         gap: 8px;
         font-size: 1.1em;
         font-weight: bold;
-        white-space: nowrap; /* Verhindert Zeilenumbruch im Textteil */
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .header-price {
+        color: #00ff88;
+        white-space: nowrap;
     }
 
     .rsi-bubble {
@@ -110,8 +124,9 @@ st.markdown("""
         font-weight: bold;
         text-align: center;
         border: 2px solid;
-        min-width: 110px;
+        min-width: 100px;
         font-size: 0.9em;
+        flex-shrink: 0; /* Bubble darf nicht kleiner werden */
     }
     
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
@@ -166,10 +181,13 @@ if st.session_state.watchlist:
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
-            co_name, curr_symbol = get_stock_meta(ticker)
+            co_name, currency_sym = get_stock_meta(ticker)
             
-            # Daten extrahieren
-            df = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
+            # Preis-Extraktion
+            if len(st.session_state.watchlist) > 1:
+                df = all_data['Close'][ticker].dropna()
+            else:
+                df = all_data['Close'].dropna()
             
             if not df.empty:
                 current_price = df.iloc[-1]
@@ -186,7 +204,7 @@ if st.session_state.watchlist:
                         <div class="header-text-group">
                             <span>{co_name}:</span>
                             <span>{ticker}</span>
-                            <span style="color: #00ff88;">{current_price:.2f} {curr_symbol}</span>
+                            <span class="header-price">{current_price:.2f} {currency_sym}</span>
                         </div>
                         <div class="rsi-bubble {cl}">RSI: {rsi_val:.2f}<br>{txt}</div>
                     </div>
