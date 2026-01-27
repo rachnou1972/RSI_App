@@ -28,37 +28,23 @@ def fetch_stock_data(tickers):
     data = yf.download(tickers, period="1mo", interval="1d", progress=False)
     return data.ffill()
 
-@st.cache_data(ttl=3600)
-def get_stock_meta(ticker):
-    """Holt Namen und bestimmt das Währungssymbol"""
+def get_currency_and_name(ticker):
+    """Erkennt Währung anhand des Kürzels und holt Namen"""
+    # 1. Währung bestimmen (Robustes Suffix-System)
+    euro_exchanges = [".TG", ".DE", ".F", ".BE", ".MU", ".DU", ".HA", ".ZE"]
+    if any(ticker.upper().endswith(ext) for ext in euro_exchanges):
+        currency = "€"
+    else:
+        currency = "$"
+    
+    # 2. Name holen (Cachen für Speed)
     try:
         t = yf.Ticker(ticker)
-        # Name holen
         name = t.info.get('longName') or t.info.get('shortName') or ticker
-        
-        # Währung bestimmen
-        currency = t.info.get('currency', 'USD')
-        
-        # Mapping von Kürzel zu Symbol
-        mapping = {
-            "USD": "$",
-            "EUR": "€",
-            "GBp": "p",
-            "GBP": "£",
-            "CHF": "Fr."
-        }
-        
-        # Falls Yahoo keine Währung liefert, anhand der Börse schätzen
-        symbol = mapping.get(currency, "")
-        if not symbol:
-            if any(ticker.endswith(ext) for ext in [".TG", ".DE", ".F", ".BE", ".MU"]):
-                symbol = "€"
-            else:
-                symbol = "$"
-                
-        return name.upper(), symbol
     except:
-        return ticker.upper(), ""
+        name = ticker
+    
+    return name.upper(), currency
 
 def calc_rsi(series, period=5):
     delta = series.diff()
@@ -74,7 +60,7 @@ st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
     
-    /* Desktop-Zentrierung: 700px für viel schwarzen Rand */
+    /* Desktop-Zentrierung: 700px breit für viel schwarzen Rand */
     @media (min-width: 1024px) {
         .main .block-container {
             max-width: 700px !important;
@@ -85,7 +71,6 @@ st.markdown("""
         }
     }
 
-    /* Das 3-Stufen-Modul */
     .stock-module {
         padding: 20px;
         border-radius: 20px;
@@ -93,14 +78,12 @@ st.markdown("""
         box-shadow: 0 10px 30px rgba(0,0,0,0.6);
     }
 
-    /* Header: Name, Ticker, Preis in einer Zeile */
     .module-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 15px;
         gap: 10px;
-        flex-wrap: nowrap; /* Verhindert Umbruch im Header */
     }
     
     .header-text-group {
@@ -109,8 +92,6 @@ st.markdown("""
         gap: 8px;
         font-size: 1.1em;
         font-weight: bold;
-        overflow: hidden;
-        text-overflow: ellipsis;
     }
 
     .header-price {
@@ -126,7 +107,6 @@ st.markdown("""
         border: 2px solid;
         min-width: 100px;
         font-size: 0.9em;
-        flex-shrink: 0; /* Bubble darf nicht kleiner werden */
     }
     
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
@@ -143,11 +123,11 @@ st.markdown("""
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
-# --- SIDEBAR (BACKUP) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Verwaltung")
     current_list_str = ",".join(st.session_state.watchlist)
-    st.text_area("Master-Liste für Secrets:", value=current_list_str, height=120)
+    st.text_area("Master-Liste:", value=current_list_str, height=120)
     if st.button("🔄 Reset aus Secrets"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
@@ -181,13 +161,10 @@ if st.session_state.watchlist:
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
-            co_name, currency_sym = get_stock_meta(ticker)
+            co_name, currency = get_currency_and_name(ticker)
             
             # Preis-Extraktion
-            if len(st.session_state.watchlist) > 1:
-                df = all_data['Close'][ticker].dropna()
-            else:
-                df = all_data['Close'].dropna()
+            df = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
             
             if not df.empty:
                 current_price = df.iloc[-1]
@@ -197,20 +174,18 @@ if st.session_state.watchlist:
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
                 txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
 
-                # DAS MODUL
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <div class="module-header">
                         <div class="header-text-group">
                             <span>{co_name}:</span>
                             <span>{ticker}</span>
-                            <span class="header-price">{current_price:.2f} {currency_sym}</span>
+                            <span class="header-price">{current_price:.2f} {currency}</span>
                         </div>
                         <div class="rsi-bubble {cl}">RSI: {rsi_val:.2f}<br>{txt}</div>
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # Chart
                 fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='white', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
@@ -219,7 +194,6 @@ if st.session_state.watchlist:
                                   xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                # Löschen
                 st.markdown('<div class="btn-del">', unsafe_allow_html=True)
                 if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
                     st.session_state.watchlist.remove(ticker)
