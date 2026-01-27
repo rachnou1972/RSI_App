@@ -25,7 +25,6 @@ def load_from_secrets():
 @st.cache_data(ttl=25)
 def fetch_stock_data(tickers):
     if not tickers: return pd.DataFrame()
-    # 1 Monat Daten für stabilen 5-Tage RSI
     data = yf.download(tickers, period="1mo", interval="1d", progress=False)
     return data.ffill()
 
@@ -50,18 +49,19 @@ def calc_rsi(series, period=5):
 # --- UI SETUP ---
 st.set_page_config(page_title="RSI 5-Day Tracker", layout="wide")
 
-# CSS: STRENGE ZENTRIERUNG UND MAX-WIDTH
+# CSS: STRENGE ZENTRIERUNG AUF 60% BREITE
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
     
-    /* Laptop Design: Mittig und schmal (750px) */
-    @media (min-width: 768px) {
+    /* Laptop Design: Exakt 60% der Breite und mittig */
+    @media (min-width: 1024px) {
         .main .block-container {
-            max-width: 750px !important;
-            margin: auto !important;
-            padding-left: 20px !important;
-            padding-right: 20px !important;
+            max-width: 60% !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+            padding-left: 2rem !important;
+            padding-right: 2rem !important;
         }
     }
 
@@ -71,9 +71,10 @@ st.markdown("""
         border-radius: 20px;
         margin-bottom: 25px;
         box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        border: 1px solid rgba(255,255,255,0.05);
     }
 
-    .header-main-text { font-size: 1.3em; font-weight: bold; }
+    .header-main-text { font-size: 1.3em; font-weight: bold; line-height: 1.2; }
     
     .rsi-bubble {
         padding: 8px 15px;
@@ -82,7 +83,7 @@ st.markdown("""
         text-align: center;
         border: 2px solid;
         min-width: 120px;
-        font-size: 1em;
+        font-size: 0.9em;
     }
     
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
@@ -95,12 +96,12 @@ st.markdown("""
         border-radius: 12px;
         width: 100%;
         font-weight: bold;
-        height: 40px;
+        height: 42px;
         border: none;
     }
     .btn-del > div.stButton > button {
         background-color: rgba(255,255,255,0.08) !important;
-        border: 1px solid rgba(255,255,255,0.2) !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
     }
     input { color: #000 !important; font-weight: bold !important; }
     </style>
@@ -109,10 +110,10 @@ st.markdown("""
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
-st.title("📈 RSI 5-Day Tracker")
+st.title("📈 RSI Tracker (5D)")
 
 # SUCHE
-search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple...")
+search = st.text_input("Aktie hinzufügen...", placeholder="Name oder Symbol...")
 if search:
     try:
         s_res = yf.Search(search, max_results=5).quotes
@@ -137,9 +138,9 @@ if st.session_state.watchlist:
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
-            co_name, currency_symbol = get_stock_meta(ticker)
+            co_name, curr_sym = get_stock_meta(ticker)
             
-            # Daten extrahieren (letzte 5 Tage für Chart)
+            # Daten für 5-Tage-Anzeige
             df_full = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
             
             if not df_full.empty:
@@ -147,18 +148,18 @@ if st.session_state.watchlist:
                 df_recent = df_full.tail(5)
                 rsi_recent = rsi_series.tail(5)
                 
-                current_price = df_recent.iloc[-1]
-                rsi_val = rsi_recent.iloc[-1]
+                curr_p = df_recent.iloc[-1]
+                rsi_v = rsi_recent.iloc[-1]
                 
-                cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
-                txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
+                cl = "buy" if rsi_v < 30 else "sell" if rsi_v > 70 else "neutral"
+                txt = "KAUFZONE" if rsi_v < 30 else "VERKAUFZONE" if rsi_v > 70 else "NEUTRAL"
 
                 # DAS MODUL
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <div class="header-main-text">{co_name}: {ticker}<br>{current_price:.2f} {currency_symbol}</div>
-                        <div class="rsi-bubble {cl}">RSI (5): {rsi_val:.2f}<br>{txt}</div>
+                        <div class="header-main-text">{co_name}: {ticker}<br>{curr_p:.2f} {curr_sym}</div>
+                        <div class="rsi-bubble {cl}">RSI (5): {rsi_v:.2f}<br>{txt}</div>
                     </div>
                 """, unsafe_allow_html=True)
                 
@@ -168,7 +169,7 @@ if st.session_state.watchlist:
                     y=rsi_recent, 
                     mode='lines+markers',
                     line=dict(color='white', width=4),
-                    marker=dict(size=10)
+                    marker=dict(size=10, bordercolor="white", borderwidth=1)
                 ))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
