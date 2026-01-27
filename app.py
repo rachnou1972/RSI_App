@@ -25,18 +25,15 @@ def load_from_secrets():
 @st.cache_data(ttl=25)
 def fetch_stock_data(tickers):
     if not tickers: return pd.DataFrame()
-    # Wir laden 1 Monat Daten für einen stabilen RSI
     data = yf.download(tickers, period="1mo", interval="1d", progress=False)
     return data.ffill()
 
 @st.cache_data(ttl=3600)
 def get_stock_meta(ticker):
-    """Holt Firmenname und Original-Währungssymbol"""
     try:
         t = yf.Ticker(ticker)
         name = t.info.get('longName') or ticker
         curr_code = t.info.get('currency', '')
-        # Währungs-Mapping
         mapping = {"USD": "$", "EUR": "€", "GBp": "p", "CHF": "Fr"}
         symbol = mapping.get(curr_code, curr_code)
         return name.upper(), symbol
@@ -55,18 +52,27 @@ st.set_page_config(page_title="RSI Tracker", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
-    @media (min-width: 768px) { .main .block-container { max-width: 850px; margin: auto; } }
     
-    .stock-module { padding: 25px; border-radius: 20px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-    .header-main-text { font-size: 1.4em; font-weight: bold; }
+    /* ZENTRIERUNG & SCHMALE BREITE (650px) */
+    @media (min-width: 768px) {
+        .main .block-container {
+            max-width: 650px !important;
+            margin: auto !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+    }
     
-    .rsi-bubble { padding: 10px 20px; border-radius: 12px; font-weight: bold; text-align: center; border: 2px solid; min-width: 140px; }
+    .stock-module { padding: 20px; border-radius: 20px; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .header-main-text { font-size: 1.2em; font-weight: bold; line-height: 1.2; }
+    
+    .rsi-bubble { padding: 8px 15px; border-radius: 12px; font-weight: bold; text-align: center; border: 2px solid; min-width: 110px; font-size: 0.9em; }
     .buy { border-color: #00ff88; color: #00ff88; background: rgba(0,255,136,0.1); }
     .sell { border-color: #ff4e4e; color: #ff4e4e; background: rgba(255,78,78,0.1); }
     .neutral { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.1); }
     
-    div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 45px; border: none; }
-    .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.1) !important; margin-top: 15px; }
+    div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 40px; border: none; }
+    .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.1) !important; margin-top: 10px; }
     input { color: #000 !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -74,12 +80,12 @@ st.markdown("""
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
-# --- SIDEBAR FÜR BACKUP ---
+# --- SIDEBAR BACKUP ---
 with st.sidebar:
     st.header("⚙️ Verwaltung")
-    st.write("Aktuelle Liste für deine Secrets:")
+    st.write("Liste für Secrets:")
     current_list_str = ",".join(st.session_state.watchlist)
-    st.text_area("Kopieren & in START_STOCKS speichern:", value=current_list_str, height=150)
+    st.text_area("Kopieren:", value=current_list_str, height=150)
     if st.button("🔄 Reset aus Secrets"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
@@ -88,7 +94,7 @@ with st.sidebar:
 st.title("📈 RSI Tracker")
 
 # SUCHE
-search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple, US0378331005")
+search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple...")
 if search:
     try:
         s_res = yf.Search(search, max_results=5).quotes
@@ -106,17 +112,15 @@ if search:
 
 st.divider()
 
-# ANZEIGE DER MODULE
+# ANZEIGE
 if st.session_state.watchlist:
-    with st.spinner("Lade Marktdaten..."):
-        all_data = fetch_stock_data(st.session_state.watchlist)
+    all_data = fetch_stock_data(st.session_state.watchlist)
     
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
             co_name, currency_symbol = get_stock_meta(ticker)
             
-            # Preis- und RSI-Extraktion
             df = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
             
             if not df.empty:
@@ -127,7 +131,6 @@ if st.session_state.watchlist:
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
                 txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
 
-                # 3-STUFEN-MODUL
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -136,16 +139,14 @@ if st.session_state.watchlist:
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # Chart
                 fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='white', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
-                fig.update_layout(height=180, margin=dict(l=0,r=0,t=10,b=10), paper_bgcolor='rgba(0,0,0,0)', 
+                fig.update_layout(height=160, margin=dict(l=0,r=0,t=10,b=10), paper_bgcolor='rgba(0,0,0,0)', 
                                   plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"),
                                   xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                # Löschen
                 st.markdown('<div class="btn-del">', unsafe_allow_html=True)
                 if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
                     st.session_state.watchlist.remove(ticker)
