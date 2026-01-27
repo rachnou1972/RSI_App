@@ -17,18 +17,32 @@ def trigger_rerun():
 
 def load_from_secrets():
     try:
-        secret_string = st.secrets.get("START_STOCKS", "TL0.TG,APC.TG")
+        secret_string = st.secrets.get("START_STOCKS", "TL0.TG,AAPL")
         return [s.strip() for s in secret_string.split(",") if s.strip()]
     except:
         return ["TL0.TG"]
 
-@st.cache_data(ttl=25) # Cache etwas kürzer als das Auto-Refresh Intervall
+@st.cache_data(ttl=25)
 def fetch_stock_data(tickers):
     if not tickers: return pd.DataFrame()
     data = yf.download(tickers, period="3mo", interval="1d", progress=False)
     return data.ffill()
 
-def calc_rsi(series, period=5): # Geändert auf 5 Tage
+@st.cache_data(ttl=3600)
+def get_stock_meta(ticker):
+    """Holt Firmenname und Original-Währungssymbol"""
+    try:
+        t = yf.Ticker(ticker)
+        name = t.info.get('longName') or ticker
+        curr_code = t.info.get('currency', '')
+        # Währungs-Mapping
+        mapping = {"USD": "$", "EUR": "€", "GBp": "p", "CHF": "Fr"}
+        symbol = mapping.get(curr_code, curr_code)
+        return name.upper(), symbol
+    except:
+        return ticker.upper(), ""
+
+def calc_rsi(series, period=5):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -56,28 +70,22 @@ st.markdown("""
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = load_from_secrets()
 
-# SIDEBAR FÜR BACKUP
+# SIDEBAR
 with st.sidebar:
-    st.header("📋 Liste (Auto-Sync 30s)")
+    st.header("📋 Watchlist")
     st.code(",".join(st.session_state.watchlist))
-    if st.button("🔄 Reset / Secrets laden"):
+    if st.button("🔄 Reset aus Secrets"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
         trigger_rerun()
 
-st.title("📈 RSI Tracker (5-Tage Intervall)")
-st.info("Marktdaten werden alle 30 Sekunden automatisch aktualisiert.")
-
-# MANUELLER UPDATE BUTTON
-if st.button("🔄 Marktdaten jetzt manuell aktualisieren", use_container_width=True):
-    st.cache_data.clear()
-    trigger_rerun()
+st.title("📈 RSI Tracker (5-Tage)")
 
 # SUCHE
-search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple...")
+search = st.text_input("Aktie hinzufügen...", placeholder="z.B. Tesla, Apple, US0378331005")
 if search:
     try:
-        s_res = yf.Search(search, max_results=8).quotes
+        s_res = yf.Search(search, max_results=5).quotes
         if s_res:
             options = {f"{r.get('shortname')} ({r.get('symbol')})": r.get('symbol') for r in s_res if r.get('symbol')}
             sel = st.selectbox("Ergebnis wählen:", options.keys())
@@ -92,42 +100,34 @@ if search:
 
 st.divider()
 
-# ANZEIGE DER MODULE
+# ANZEIGE
 if st.session_state.watchlist:
     all_data = fetch_stock_data(st.session_state.watchlist)
     
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
+            co_name, currency_symbol = get_stock_meta(ticker)
             
-            # Datenextraktion
-            if len(st.session_state.watchlist) > 1:
-                df = all_data['Close'][ticker].dropna()
-            else:
-                df = all_data['Close'].dropna()
+            # Preis- und RSI-Extraktion
+            df = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
             
             if not df.empty:
-                t_obj = yf.Ticker(ticker)
-                full_name = t_obj.info.get('longName') or ticker
-                price = df.iloc[-1]
-                
-                # RSI 5 TAGE BERECHNUNG
+                current_price = df.iloc[-1]
                 rsi_series = calc_rsi(df, period=5)
                 rsi_val = rsi_series.iloc[-1]
                 
                 cl = "buy" if rsi_val < 30 else "sell" if rsi_val > 70 else "neutral"
-                txt = "KAUFZONE" if rsi_val < 30 else "VERKAUFZONE" if rsi_val > 70 else "NEUTRAL"
+                txt = "KAUFEN" if rsi_val < 30 else "VERKAUFEN" if rsi_val > 70 else "NEUTRAL"
 
-                # DAS 3-STUFEN-MODUL
                 st.markdown(f"""
                 <div class="stock-module" style="background-color: {mod_color};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <div class="header-main-text">{full_name.upper()}: {ticker} {price:.2f} €</div>
+                        <div class="header-main-text">{co_name}: {ticker} {current_price:.2f} {currency_symbol}</div>
                         <div class="rsi-bubble {cl}">RSI (5): {rsi_val:.2f}<br>{txt}</div>
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # Chart
                 fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='white', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
@@ -136,7 +136,6 @@ if st.session_state.watchlist:
                                   xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                # Löschen
                 st.markdown('<div class="btn-del">', unsafe_allow_html=True)
                 if st.button(f"🗑️ {ticker} entfernen", key="del_"+ticker):
                     st.session_state.watchlist.remove(ticker)
