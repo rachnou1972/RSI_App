@@ -30,23 +30,26 @@ def fetch_stock_data(tickers):
 
 @st.cache_data(ttl=3600)
 def get_stock_meta(ticker):
-    """Holt Firmenname und erkennt Währung"""
+    """Holt Namen und erkennt die korrekte Währung (USD -> $, EUR -> €)"""
     try:
         t = yf.Ticker(ticker)
-        name = t.info.get('longName') or t.info.get('shortName') or ticker
-        curr = t.info.get('currency', '')
+        info = t.info
+        name = info.get('longName') or info.get('shortName') or ticker
+        currency_code = info.get('currency', '')
         
-        # Manuelles Mapping falls Info fehlt
-        mapping = {"USD": "$", "EUR": "€", "GBp": "p"}
-        symbol = mapping.get(curr, "")
-        
-        # Fallback basierend auf Ticker-Endung
-        if not symbol:
-            if ticker.endswith(".TG") or ticker.endswith(".DE") or ticker.endswith(".F"):
-                symbol = "€"
+        # Währungs-Zuordnung
+        if currency_code == "USD":
+            currency_symbol = "$"
+        elif currency_code == "EUR":
+            currency_symbol = "€"
+        else:
+            # Fallback basierend auf dem Ticker-Kürzel
+            if any(ext in ticker for ext in [".TG", ".DE", ".F", ".BE", ".MU"]):
+                currency_symbol = "€"
             else:
-                symbol = "$"
-        return name.upper(), symbol
+                currency_symbol = "$"
+        
+        return name.upper(), currency_symbol
     except:
         return ticker.upper(), "€"
 
@@ -64,7 +67,7 @@ st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
     
-    /* Desktop-Zentrierung: Schmaler (700px) für viel Rand links/rechts */
+    /* Laptop-Zentrierung: 700px breit für viel schwarzen Rand links/rechts */
     @media (min-width: 1024px) {
         .main .block-container {
             max-width: 700px !important;
@@ -83,7 +86,7 @@ st.markdown("""
         box-shadow: 0 10px 30px rgba(0,0,0,0.6);
     }
 
-    /* Header: Alles in einer Zeile */
+    /* Header: Name, Ticker, Preis in einer Zeile */
     .module-header {
         display: flex;
         justify-content: space-between;
@@ -96,9 +99,9 @@ st.markdown("""
         display: flex;
         align-items: baseline;
         gap: 8px;
-        font-size: 1.2em;
+        font-size: 1.1em;
         font-weight: bold;
-        flex-wrap: wrap;
+        white-space: nowrap; /* Verhindert Zeilenumbruch im Textteil */
     }
 
     .rsi-bubble {
@@ -117,6 +120,7 @@ st.markdown("""
     
     div.stButton > button { background-color: #4e8cff !important; color: white !important; border-radius: 12px; width: 100%; font-weight: bold; height: 42px; border: none; }
     .btn-del > div.stButton > button { background-color: rgba(255,255,255,0.08) !important; margin-top: 10px; border: 1px solid rgba(255,255,255,0.2) !important; }
+    
     input { color: #000 !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -128,7 +132,7 @@ if 'watchlist' not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Verwaltung")
     current_list_str = ",".join(st.session_state.watchlist)
-    st.text_area("Liste für Secrets:", value=current_list_str, height=120)
+    st.text_area("Master-Liste für Secrets:", value=current_list_str, height=120)
     if st.button("🔄 Reset aus Secrets"):
         st.session_state.watchlist = load_from_secrets()
         st.cache_data.clear()
@@ -155,16 +159,16 @@ if search:
 
 st.divider()
 
-# ANZEIGE
+# --- ANZEIGE ---
 if st.session_state.watchlist:
     all_data = fetch_stock_data(st.session_state.watchlist)
     
     for i, ticker in enumerate(st.session_state.watchlist):
         try:
             mod_color = COLORS[i % len(COLORS)]
-            co_name, currency_sym = get_stock_meta(ticker)
+            co_name, curr_symbol = get_stock_meta(ticker)
             
-            # Preis-Extraktion
+            # Daten extrahieren
             df = all_data['Close'][ticker].dropna() if len(st.session_state.watchlist) > 1 else all_data['Close'].dropna()
             
             if not df.empty:
@@ -182,7 +186,7 @@ if st.session_state.watchlist:
                         <div class="header-text-group">
                             <span>{co_name}:</span>
                             <span>{ticker}</span>
-                            <span style="color: #00ff88;">{current_price:.2f} {currency_sym}</span>
+                            <span style="color: #00ff88;">{current_price:.2f} {curr_symbol}</span>
                         </div>
                         <div class="rsi-bubble {cl}">RSI: {rsi_val:.2f}<br>{txt}</div>
                     </div>
@@ -192,7 +196,7 @@ if st.session_state.watchlist:
                 fig = go.Figure(go.Scatter(x=df.index, y=rsi_series, line=dict(color='white', width=3)))
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff4e4e")
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ff88")
-                fig.update_layout(height=170, margin=dict(l=0,r=0,t=10,b=10), paper_bgcolor='rgba(0,0,0,0)', 
+                fig.update_layout(height=160, margin=dict(l=0,r=0,t=10,b=10), paper_bgcolor='rgba(0,0,0,0)', 
                                   plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"),
                                   xaxis=dict(showgrid=False), yaxis=dict(range=[0, 100], showgrid=False))
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
